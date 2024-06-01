@@ -1,2 +1,2 @@
-# ereading_the_unreadable
-A repo devloping the pipeline to correct a large corpus of OCR data
+# Ereading the unreadable
+This repository contains the code for a project to perform post-OCR correction on a large corpos of 19th Century newspaper data

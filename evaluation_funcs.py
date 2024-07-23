@@ -7,6 +7,9 @@ from collections import Counter
 from sklearn.metrics.pairwise import cosine_similarity
 from helper_functions import load_json_to_dataframe
 
+
+
+
 def vectorized_levenshtein_similarity(leven_distances, lengths):
     """
     Vectorized calculation of Levenshtein similarity based on arrays of Levenshtein distances
@@ -23,26 +26,29 @@ def vectorized_levenshtein_similarity(leven_distances, lengths):
     similarities = np.where(lengths > 0, (lengths - leven_distances) / lengths, 0)
     return similarities
 
+
 # Example usage within the calculate_metrics function
 def calculate_metrics(file_name, raw_data_string, contents, wer, cer):
     wer_score = wer.compute(predictions=[raw_data_string], references=[contents])
     cer_score = cer.compute(predictions=[raw_data_string], references=[contents])
     leven_score = jellyfish.levenshtein_distance(raw_data_string, contents)
-    
+
     # Here we prepare for vectorized computation
     leven_distances = np.array([leven_score])
     lengths = np.array([max(len(raw_data_string), len(contents))])
-    
-    #This is not very useful as I can use the error rate reduction
-    #lev_sim = vectorized_levenshtein_similarity(leven_distances, lengths)[0]  # Get the first element since we're dealing with single values
 
-    results_df = pd.DataFrame({
-        'File Name': [file_name],
-        'WER': [wer_score],
-        'CER': [cer_score],
-        'lev_dist': [leven_score]#,
-    #    'lev_sim': [lev_sim]
-    })
+    # This is not very useful as I can use the error rate reduction
+    # lev_sim = vectorized_levenshtein_similarity(leven_distances, lengths)[0]  # Get the first element since we're dealing with single values
+
+    results_df = pd.DataFrame(
+        {
+            "File Name": [file_name],
+            "WER": [wer_score],
+            "CER": [cer_score],
+            "lev_dist": [leven_score],  # ,
+            #    'lev_sim': [lev_sim]
+        }
+    )
 
     return results_df
 
@@ -71,24 +77,26 @@ def evaluate_ocr_dataframe(dev_data_raw_df, dev_transcripts, wer, cer):
     """
 
     results_list = []  # To store the dataframes generated for each file
-    
+
     # Loop through each row in the DataFrame
     for index, row in dev_data_raw_df.iterrows():
-        file_name = row['file_name']
-        raw_data_string = row['content_html']
+        file_name = row["file_name"]
+        raw_data_string = row["content_html"]
         file_path = os.path.join(dev_transcripts, file_name)
 
         # Open the file and read its contents
-        with open(file_path, 'r', encoding='utf-8') as file:
+        with open(file_path, "r", encoding="utf-8") as file:
             contents = file.read()
 
         # Calculate metrics and append the resulting dataframe to the list
-        metrics_df = calculate_metrics(file_name, raw_data_string.lower(), contents.lower(), wer, cer)
+        metrics_df = calculate_metrics(
+            file_name, raw_data_string.lower(), contents.lower(), wer, cer
+        )
         results_list.append(metrics_df)
-    
+
     # Combine all the DataFrames in the list into a single DataFrame
     combined_df = pd.concat(results_list, ignore_index=True)
-    
+
     return combined_df
 
 
@@ -105,38 +113,41 @@ def load_txt_files_to_df(directory):
     """
     # Initialize a list to store the content of each text file
     content_list = []
-    
+
     # Loop through each file in the directory
     for file_name in os.listdir(directory):
         # Check if the file is a '.txt' file
-        if file_name.endswith('.txt'):
+        if file_name.endswith(".txt"):
             file_path = os.path.join(directory, file_name)
             # Open the file and read its contents
-            with open(file_path, 'r', encoding='utf-8') as file:
+            with open(file_path, "r", encoding="utf-8") as file:
                 content = file.read()
-                content_list.append({'content_html': content, 'file_name':file_name})
-    
+                content_list.append({"content_html": content, "file_name": file_name})
+
     # Create a DataFrame with the contents
     df = pd.DataFrame(content_list)
-    
+
     return df
 
+
 def percentage_error_reduction(old_errors, new_errors):
-  """
-  Calculates the percentage reduction in error between two vectors.
+    """
+    Calculates the percentage reduction in error between two vectors.
 
-  Args:
-      old_errors (numpy.ndarray): A numpy array containing the old error rates.
-      new_errors (numpy.ndarray): A numpy array containing the new error rates.
+    Args:
+        old_errors (numpy.ndarray): A numpy array containing the old error rates.
+        new_errors (numpy.ndarray): A numpy array containing the new error rates.
 
-  Returns:
-      numpy.ndarray: A numpy array containing the percentage reduction for each element.
-  """
+    Returns:
+        numpy.ndarray: A numpy array containing the percentage reduction for each element.
+    """
 
-  # Handle division by zero with np.where
-  zero_mask = np.where(old_errors == 0, True, False)
-  reduction = np.where(zero_mask, float('inf'), (old_errors - new_errors) / old_errors * 100)
-  return reduction
+    # Handle division by zero with np.where
+    zero_mask = np.where(old_errors == 0, True, False)
+    reduction = np.where(
+        zero_mask, float("inf"), (old_errors - new_errors) / old_errors * 100
+    )
+    return reduction
 
 
 def get_metric_error_reduction(corrected_df, raw_df):
@@ -160,26 +171,38 @@ def get_metric_error_reduction(corrected_df, raw_df):
         0      file1           50.0           50.0                50.0
         1      file2           33.3           33.3                33.3
     """
-    merged_df = corrected_df.merge(raw_df.drop(columns='type'), on='File Name', suffixes=['_corrected', '_raw'])
-    
+    merged_df = corrected_df.merge(
+        raw_df.drop(columns="type"), on="File Name", suffixes=["_corrected", "_raw"]
+    )
+
     # Calculate the percentage error reduction for each column
-    wer_reduction = percentage_error_reduction(merged_df['WER_raw'], merged_df['WER_corrected'])
-    cer_reduction = percentage_error_reduction(merged_df['CER_raw'], merged_df['CER_corrected'])
-    lev_dist_reduction = percentage_error_reduction(merged_df['lev_dist_raw'], merged_df['lev_dist_corrected'])
-    
+    wer_reduction = percentage_error_reduction(
+        merged_df["WER_raw"], merged_df["WER_corrected"]
+    )
+    cer_reduction = percentage_error_reduction(
+        merged_df["CER_raw"], merged_df["CER_corrected"]
+    )
+    lev_dist_reduction = percentage_error_reduction(
+        merged_df["lev_dist_raw"], merged_df["lev_dist_corrected"]
+    )
+
     # Create a new DataFrame with the calculated relative errors
-    relative_errors_df = pd.DataFrame({
-        'File Name': merged_df['File Name'],
-        'type':merged_df['type'],
-        'WER': wer_reduction,
-        'CER': cer_reduction,
-        'lev_dist': lev_dist_reduction
-    })
-    
+    relative_errors_df = pd.DataFrame(
+        {
+            "File Name": merged_df["File Name"],
+            "type": merged_df["type"],
+            "WER": wer_reduction,
+            "CER": cer_reduction,
+            "lev_dist": lev_dist_reduction,
+        }
+    )
+
     return relative_errors_df
 
 
-def evaluate_correction_performance(folder, transcripts_dir, wer_func, cer_func, type, remove_line_breaks = True):
+def evaluate_correction_performance(
+    folder, transcripts_dir, wer_func, cer_func, type, remove_line_breaks=True
+):
     """
     Evaluate the performance of the OCR relative to the transcript ground truth.
 
@@ -197,17 +220,26 @@ def evaluate_correction_performance(folder, transcripts_dir, wer_func, cer_func,
     dev_data_raw_df = load_txt_files_to_df(folder)
 
     if remove_line_breaks:
-        dev_data_raw_df['content_html'] = dev_data_raw_df['content_html'].str.replace("\n", " ")
-    
+        dev_data_raw_df["content_html"] = dev_data_raw_df["content_html"].str.replace(
+            "\n", " "
+        )
+
     # filter to only have the ones with a transcript
-    dev_data_raw_df = dev_data_raw_df.loc[dev_data_raw_df['file_name'].isin(os.listdir(transcripts_dir))].reset_index(drop=True)
-    
-    eval_temp = evaluate_ocr_dataframe(dev_data_raw_df, transcripts_dir, wer_func, cer_func)
-    eval_temp['type'] = type
-    
+    dev_data_raw_df = dev_data_raw_df.loc[
+        dev_data_raw_df["file_name"].isin(os.listdir(transcripts_dir))
+    ].reset_index(drop=True)
+
+    eval_temp = evaluate_ocr_dataframe(
+        dev_data_raw_df, transcripts_dir, wer_func, cer_func
+    )
+    eval_temp["type"] = type
+
     return eval_temp
 
-def evaluate_correction_performance_folders(corrected_folder, transcript_folder, wer_func, cer_func, remove_line_breaks = True):
+
+def evaluate_correction_performance_folders(
+    corrected_folder, transcript_folder, wer_func, cer_func, remove_line_breaks=True
+):
     """
     Calls `evaluate_correction_performance` on a folder of folders, allows the comparison of multiple models or prompts
     Evaluate the performance of LLM post-OCR recovery using WER, CER, and levenstiend distance
@@ -227,8 +259,14 @@ def evaluate_correction_performance_folders(corrected_folder, transcript_folder,
     """
     performance_eval = []
     for folder in os.listdir(corrected_folder):
-        
-        eval_temp = evaluate_correction_performance(os.path.join(corrected_folder, folder),transcript_folder , wer_func, cer_func, folder, remove_line_breaks)
+        eval_temp = evaluate_correction_performance(
+            os.path.join(corrected_folder, folder),
+            transcript_folder,
+            wer_func,
+            cer_func,
+            folder,
+            remove_line_breaks,
+        )
 
         performance_eval.append(eval_temp)
 
@@ -237,7 +275,6 @@ def evaluate_correction_performance_folders(corrected_folder, transcript_folder,
 
 
 def calculate_entity_similarity(predicted_entities, ground_truth_entities):
-
     """
     Calculate the cosine similarity between the frequency vectors of entities extracted from predicted and ground truth data.
 
@@ -263,25 +300,24 @@ def calculate_entity_similarity(predicted_entities, ground_truth_entities):
         print(f"Entity similarity: {similarity:.2f}")
     """
     # Extract words from predicted and ground truth entities
-    predicted_words = [entity['word'] for entity in predicted_entities]
-    ground_truth_words = [entity['word'] for entity in ground_truth_entities]
-    
+    predicted_words = [entity["word"] for entity in predicted_entities]
+    ground_truth_words = [entity["word"] for entity in ground_truth_entities]
+
     # Count occurrences of words in predicted and ground truth entities
     predicted_counts = Counter(predicted_words)
     ground_truth_counts = Counter(ground_truth_words)
-    
+
     # Create a list of all unique words present in either predicted or ground truth entities
     all_words = list(set(predicted_words + ground_truth_words))
-    
+
     # Create vectors based on the counts of words
     predicted_vector = np.array([predicted_counts[word] for word in all_words])
     ground_truth_vector = np.array([ground_truth_counts[word] for word in all_words])
-    
+
     # Compute cosine similarity between the vectors
     similarity = cosine_similarity([predicted_vector], [ground_truth_vector])[0][0]
-    
-    return similarity
 
+    return similarity
 
 
 def evaluate_ner_dict(ground_truth, predicted):
@@ -299,29 +335,39 @@ def evaluate_ner_dict(ground_truth, predicted):
     ground_truth_labels = []
     predicted_labels = []
     if ground_truth:
-        ground_truth_labels.append([{
-            'label': entity['entity'],
-            'start': entity['start'],
-            'end': entity['end']
-        } for entity in ground_truth])
+        ground_truth_labels.append(
+            [
+                {
+                    "label": entity["entity"],
+                    "start": entity["start"],
+                    "end": entity["end"],
+                }
+                for entity in ground_truth
+            ]
+        )
     else:
         ground_truth_labels.append([])
 
     if predicted:
-        predicted_labels.append([{
-            'label': entity['entity'],
-            'start': entity['start'],
-            'end': entity['end']
-        } for entity in predicted])
+        predicted_labels.append(
+            [
+                {
+                    "label": entity["entity"],
+                    "start": entity["start"],
+                    "end": entity["end"],
+                }
+                for entity in predicted
+            ]
+        )
     else:
         predicted_labels.append([])
 
-    tags = ['B-LOC', 'I-LOC', 'B-MISC', 'I-MISC', 'B-ORG', 'I-ORG', 'B-PER', 'I-PER']
+    tags = ["B-LOC", "I-LOC", "B-MISC", "I-MISC", "B-ORG", "I-ORG", "B-PER", "I-PER"]
     evaluator = Evaluator(ground_truth_labels, predicted_labels, tags=tags)
 
     # Calculate evaluation metrics for the dictionaries
     results, _ = evaluator.evaluate()
-    return results['ent_type']['f1']
+    return results["ent_type"]["f1"]
 
 
 def evaluate_ner_dataframes(recovered_NER, gt_NER):
@@ -345,21 +391,28 @@ def evaluate_ner_dataframes(recovered_NER, gt_NER):
 
     recovered_NER = recovered_NER.copy()
 
-    temp_ner = gt_NER.merge(recovered_NER, on='file_name', suffixes=['_gt', '_recovered'])
+    temp_ner = gt_NER.merge(
+        recovered_NER, on="file_name", suffixes=["_gt", "_recovered"]
+    )
 
-    temp_ner['CoNES'] = temp_ner.apply(lambda row: calculate_entity_similarity(row['NER_recovered'], row['NER_gt']), axis=1)
+    temp_ner["CoNES"] = temp_ner.apply(
+        lambda row: calculate_entity_similarity(row["NER_recovered"], row["NER_gt"]),
+        axis=1,
+    )
 
-    temp_ner['F1_score'] = temp_ner.apply(lambda row: evaluate_ner_dict(row['NER_gt'], row['NER_recovered']), axis=1)
+    temp_ner["F1_score"] = temp_ner.apply(
+        lambda row: evaluate_ner_dict(row["NER_gt"], row["NER_recovered"]), axis=1
+    )
 
-    temp_ner = temp_ner.drop(columns=['NER_gt', 'NER_recovered'])
-    
+    temp_ner = temp_ner.drop(columns=["NER_gt", "NER_recovered"])
+
     return temp_ner
 
 
 def evaluate_ner_dataset(folder_path, gt_NER):
     """
     Evaluates Named Entity Recognition (NER) performance by comparing ground truth data with predictions found in a structured directory.
-    
+
     This function assumes a specific directory structure where each subfolder in the given folder path contains prediction files.
     It calculates the F1 score and a custom similarity metric (CoNES score) for each document's NER predictions against the ground truth.
     The results are compiled into a single pandas DataFrame that includes the evaluation metrics for each document across all subfolders.
@@ -369,7 +422,7 @@ def evaluate_ner_dataset(folder_path, gt_NER):
     - gt_NER (pandas.DataFrame): A DataFrame containing the ground truth data with a 'file_name' column for merging.
 
     Returns:
-    - pandas.DataFrame: A DataFrame with the evaluation results (F1 score and CoNES score) for each document, 
+    - pandas.DataFrame: A DataFrame with the evaluation results (F1 score and CoNES score) for each document,
       along with a 'type' column indicating the subfolder from which the predictions were loaded.
 
     Raises:
@@ -389,20 +442,14 @@ def evaluate_ner_dataset(folder_path, gt_NER):
     dataset_folder = folder_path
 
     for folder in os.listdir(dataset_folder):
-
-
         target_folder = os.path.join(dataset_folder, folder)
 
         recovered_NER = load_json_to_dataframe(target_folder)
 
         temp_ner = evaluate_ner_dataframes(recovered_NER, gt_NER)
 
-        temp_ner['type'] = folder
+        temp_ner["type"] = folder
 
         output.append(temp_ner)
 
     return pd.concat(output, ignore_index=True)
-
-
-
-

@@ -63,7 +63,7 @@ def evaluate_ocr_dataframe(dev_data_raw_df, dev_transcripts, wer, cer):
 
     Parameters:
     - dev_data_raw_df (pd.DataFrame): A DataFrame containing the dataset to be processed.
-      It must include 'file_name' and 'content_html' columns.
+      It must include 'file_name' and 'article_text' columns.
     - dev_transcripts (str): The directory path where the transcript files referenced in
       dev_data_raw_df are stored.
 
@@ -81,7 +81,7 @@ def evaluate_ocr_dataframe(dev_data_raw_df, dev_transcripts, wer, cer):
     # Loop through each row in the DataFrame
     for index, row in dev_data_raw_df.iterrows():
         file_name = row["file_name"]
-        raw_data_string = row["content_html"]
+        raw_data_string = row["article_text"]
         file_path = os.path.join(dev_transcripts, file_name)
 
         # Open the file and read its contents
@@ -108,7 +108,7 @@ def load_txt_files_to_df(directory):
     - directory (str): The path to the directory containing '.txt' files.
 
     Returns:
-    - pd.DataFrame: A DataFrame with a single column "content_html", where each row contains
+    - pd.DataFrame: A DataFrame with a single column "article_text", where each row contains
       the content of one '.txt' file from the directory.
     """
     # Initialize a list to store the content of each text file
@@ -122,7 +122,7 @@ def load_txt_files_to_df(directory):
             # Open the file and read its contents
             with open(file_path, "r", encoding="utf-8") as file:
                 content = file.read()
-                content_list.append({"content_html": content, "file_name": file_name})
+                content_list.append({"article_text": content, "file_name": file_name})
 
     # Create a DataFrame with the contents
     df = pd.DataFrame(content_list)
@@ -220,7 +220,7 @@ def evaluate_correction_performance(
     dev_data_raw_df = load_txt_files_to_df(folder)
 
     if remove_line_breaks:
-        dev_data_raw_df["content_html"] = dev_data_raw_df["content_html"].str.replace(
+        dev_data_raw_df["article_text"] = dev_data_raw_df["article_text"].str.replace(
             "\n", " "
         )
 

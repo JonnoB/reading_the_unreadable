@@ -12,23 +12,10 @@ python-dotenv
 jellyfish
 scikit-learn
 pyPDF2
-ipykernel #for running  .ipynb files
-
+mistralai
 
 transformers #used for counting the tokens that will be used by the llm, this is to ensure we do not exceed the training budget
-##
-## For the fine tuning
-##
 
-#transformers
-#trl
-#accelerate
-#torch #installing torch can cause issues with some of the sub modules relating to audio, which are not necessary for this project
-# tweak as you need to
-#bitsandbytes
-#peft
-#datasets
 nervaluate #for evaluating the NER
-py-gutenberg #for getting gutenberg data
 
 #beautifulsoup4 #only needed for dowbnloading the dataset 1 from overproof, which is not really necessary.

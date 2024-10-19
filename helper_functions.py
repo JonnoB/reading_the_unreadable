@@ -4,11 +4,13 @@ import base64
 import math
 import difflib
 from pdf2image import convert_from_path
-
+import ast
 import time
 import os
 import logging
 from datetime import datetime
+import litellm
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 import logging
 
@@ -302,7 +304,8 @@ def knit_string_list(content_list: list) -> str:
     return result
 
 
-def process_image_with_api(image_base64, client, model="pixtral-12b-2409"):
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+def process_image_with_api(image_base64, model="mistral/pixtral-12b-2409"):
     """
     Process an image using an AI model API to extract information from it.
 
@@ -312,7 +315,6 @@ def process_image_with_api(image_base64, client, model="pixtral-12b-2409"):
 
     Args:
         image_base64 (str): A base64-encoded string representation of the image.
-        client: An API client object used to communicate with the AI model.
         model (str, optional): The name of the AI model to use. Defaults to "pixtral-12b-2409".
 
     Returns:
@@ -322,15 +324,10 @@ def process_image_with_api(image_base64, client, model="pixtral-12b-2409"):
               representing the API usage statistics.
 
     Raises:
-        Exception: If an error occurs during the API call or processing.
-
-    Note:
-        The function assumes the image is a JPEG and constructs the appropriate
-        data URL for the API request. It also includes a specific prompt instructing
-        the AI model on how to process the image content.
+        Exception: If an error occurs during the API call or processing after all retries.
     """
     try:
-        chat_response = client.chat.complete(
+        response = litellm.completion(
             model=model,
             messages=[
                 {
@@ -349,14 +346,13 @@ def process_image_with_api(image_base64, client, model="pixtral-12b-2409"):
             ]
         )
 
-        content = chat_response.choices[0].message.content
-        usage = chat_response.usage
-        usage = (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens)
-        return content, usage
+        content = response.choices[0].message.content
+        usage = response.usage
+        return content, (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens)
 
     except Exception as e:
-        print(f"An error occurred: {str(e)}")
-        return None, None
+        print(f"An error occurred in process_image_with_api: {str(e)}")
+        raise  # Re-raise the exception to trigger a retry
 
 def process_page(row, image_drive, page_dict, client, save_folder, dataset_df, log_df):
     """

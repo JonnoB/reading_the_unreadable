@@ -315,7 +315,8 @@ def __(
     def get_memory_usage():
         process = psutil.Process(os.getpid())
         return process.memory_info().rss / 1024 / 1024  # in MB
-    def process_jpeg_folder(folder_path, client, output_folder, max_ratio=1.5, overlap_fraction=0.1):
+
+    def process_jpeg_folder(folder_path, output_folder, max_ratio=1.5, overlap_fraction=0.1):
         os.makedirs(output_folder, exist_ok=True)
 
         log_file_path = os.path.join(output_folder, 'processing_log.csv')
@@ -340,12 +341,8 @@ def __(
                     img = Image.open(file_path)
                     print(f"Memory usage after opening image: {get_memory_usage():.2f} MB")
                     
-                    try:
-                        segments = split_image(img, max_ratio, overlap_fraction)
-                        print(f"Memory usage after splitting image: {get_memory_usage():.2f} MB")
-                    except Exception as e:
-                        print(f"Error in split_image: {str(e)}")
-                        raise
+                    segments = split_image(img, max_ratio, overlap_fraction)
+                    print(f"Memory usage after splitting image: {get_memory_usage():.2f} MB")
 
                     content_list = []
                     total_input_tokens = total_output_tokens = total_tokens = 0
@@ -354,35 +351,29 @@ def __(
                     for i, segment in enumerate(segments):
                         print(f"\nProcessing segment {i+1}/{sub_images}")
                         print(f"Segment dimensions: {segment.size}")
-                        try:
-                            buffered = BytesIO()
-                            segment.save(buffered, format="JPEG")
-                            image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                            print(f"Memory usage after encoding segment {i+1}: {get_memory_usage():.2f} MB")
-                        except Exception as e:
-                            print(f"Error in encoding segment {i+1}: {str(e)}")
-                            raise
+                        buffered = BytesIO()
+                        segment.save(buffered, format="JPEG")
+                        image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                        print(f"Memory usage after encoding segment {i+1}: {get_memory_usage():.2f} MB")
 
                         try:
-                            segment_content, usage = process_image_with_api(image_base64, client)
-                            content_list.append(segment_content)
+                            segment_content, usage = process_image_with_api(image_base64)
+                            if segment_content is not None and usage is not None:
+                                content_list.append(segment_content)
+                                input_tokens, output_tokens, segment_total_tokens = usage
+                                total_input_tokens += input_tokens
+                                total_output_tokens += output_tokens
+                                total_tokens += segment_total_tokens
+                            else:
+                                print(f"Skipping segment {i+1} due to API error")
                             print(f"Memory usage after API processing of segment {i+1}: {get_memory_usage():.2f} MB")
                         except Exception as e:
                             print(f"Error in process_image_with_api for segment {i+1}: {str(e)}")
-                            raise
-
-                        input_tokens, output_tokens, segment_total_tokens = usage
-                        total_input_tokens += input_tokens
-                        total_output_tokens += output_tokens
-                        total_tokens += segment_total_tokens
+                            print(f"Skipping segment {i+1}")
 
                     print("\nCombining content from all segments")
-                    try:
-                        combined_content = knit_string_list(content_list)
-                        print(f"Memory usage after combining content: {get_memory_usage():.2f} MB")
-                    except Exception as e:
-                        print(f"Error in knit_string_list: {str(e)}")
-                        raise
+                    combined_content = knit_string_list(content_list)
+                    print(f"Memory usage after combining content: {get_memory_usage():.2f} MB")
 
                     output_file = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}.txt")
                     with open(output_file, 'w', encoding='utf-8') as f:
@@ -429,7 +420,7 @@ def __(
 @app.cell
 def __(client, np, process_jpeg_folder):
     process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
-                        client = client, 
+                       # client = client, 
                         output_folder = 'data/BLN600_mistral_whole',
                          max_ratio=np.inf, overlap_fraction=0.1)
     return
@@ -438,7 +429,7 @@ def __(client, np, process_jpeg_folder):
 @app.cell
 def __(client, process_jpeg_folder):
     process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
-                        client = client, 
+                       # client = client, 
                         max_ratio=1.5,
                         output_folder = 'data/BLN600_mistral_ratio_15')
     return
@@ -447,7 +438,7 @@ def __(client, process_jpeg_folder):
 @app.cell
 def __(client, process_jpeg_folder):
     process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
-                        client = client, 
+                      #  client = client, 
                         max_ratio=1,
                         output_folder = 'data/BLN600_mistral_ratio_1')
     return

@@ -305,7 +305,7 @@ def knit_string_list(content_list: list) -> str:
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def process_image_with_api(image_base64, model="mistral/pixtral-12b-2409"):
+def process_image_with_api(image_base64, prompt,  model="mistral/pixtral-12b-2409"):
     """
     Process an image using an AI model API to extract information from it.
 
@@ -335,7 +335,7 @@ def process_image_with_api(image_base64, model="mistral/pixtral-12b-2409"):
                     "content": [
                         {
                             "type": "text",
-                            "text": "Attached is a jpeg taken from a scan of an English 19th century newspaper. The jpeg may contain, text, lists, tables, or images, newspaper. Please extract the information from it appropriately. In the case of an image please return the alt text of a couple of sentences. Do not add any additional comment or chat."
+                            "text": prompt
                         },
                         {
                             "type": "image_url",

@@ -81,19 +81,6 @@ def __():
 
 
 @app.cell
-def __(data_folder, os):
-    import wand.image
-    from wand.display import display
-
-
-    with wand.image.Image(filename=os.path.join(data_folder,'repeating.jpeg')) as img:
-        img.deskew(0.4*img.quantum_range)
-        img.save(filename=os.path.join(data_folder,'repeating_deskew.jpeg'))
-        display(img)
-    return display, img, wand
-
-
-@app.cell
 def __(
     BytesIO,
     Image,
@@ -107,9 +94,10 @@ def __(
     tqdm,
     wand,
 ):
-    def split_image(image, max_ratio=1.5, overlap_fraction=0.1, max_segments=10):
+    def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=10):
         """
         Split an image into segments based on a maximum aspect ratio.
+        The final segment will maintain the same ratio as other segments.
 
         Args:
             image: PIL Image object
@@ -121,21 +109,45 @@ def __(
             list: List of PIL Image objects (segments)
         """
         width, height = image.size
-        current_ratio = width / height
+        current_ratio = height / width
 
+        # If the image ratio is already acceptable, return the original image
         if current_ratio <= max_ratio:
             return [image]
 
-        segment_height = int(width / max_ratio)
-        overlap_height = int(segment_height * overlap_fraction)
+        # Calculate the ideal height for each segment
+        segment_height = int(width * max_ratio)
+        overlap_pixels = int(segment_height * overlap_fraction)
 
         segments = []
-        y = 0
-        while y < height and len(segments) < max_segments:
-            bottom = min(y + segment_height, height)
-            segment = image.crop((0, y, width, bottom))
+        y_start = 0
+
+        while y_start < height and len(segments) < max_segments:
+            y_end = min(y_start + segment_height, height)
+            
+            # Check if this would be the final segment
+            remaining_height = height - y_start
+            if remaining_height < segment_height and remaining_height / width < max_ratio:
+                # Adjust y_start backwards to maintain the desired ratio for the final segment
+                y_start = height - segment_height
+                y_end = height
+                
+                # If this isn't the first segment, add it
+                if segments:
+                    segment = image.crop((0, y_start, width, y_end))
+                    segments.append(segment)
+                break
+            
+            # Create the segment
+            segment = image.crop((0, y_start, width, y_end))
             segments.append(segment)
-            y = bottom - overlap_height
+
+            # If we've reached the bottom of the image, break
+            if y_end >= height:
+                break
+
+            # Calculate the start position for the next segment
+            y_start = y_end - overlap_pixels
 
         return segments
 
@@ -252,194 +264,64 @@ def __(
 
 
 @app.cell
-def __():
-    transcriber_prompt = "You are an expert at transcription. The text is from a 19th century news article. Please transcribe exactly the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only."
+def __(Image, os, process_segment, split_image):
 
-    return (transcriber_prompt,)
-
-
-@app.cell
-def __(mo):
-    mo.md(r"""## With deskew""")
-    return
+    # Define paths and parameters
+    image_path = "data/BLN600/Images_jpg/3200810905.jpg"       # Path to the image file
+    output_folder = "data/test_segment"           # Folder to save segment results
+    max_ratio = 1                             # Maximum segment aspect ratio
+    overlap_fraction = 0.1                      # Overlap fraction for splitting
 
 
-@app.cell
-def __(np, process_jpeg_folder, transcriber_prompt):
+    prompt = "You are an expert at transcription. The text is from a 19th century news article. Please transcribe exactly the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only."
+    # Ensure the output directory exists
+    os.makedirs(output_folder, exist_ok=True)
 
-    process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
-                        output_folder = 'data/BLN600_deskew',
-                        prompt = transcriber_prompt, 
-                         max_ratio=np.inf, overlap_fraction=0.2)
+    # Step 1: Load the image
+    img = Image.open(image_path)
 
-    process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
-                        output_folder = 'data/BLN600_deskew_ratio_15',
-                        prompt = transcriber_prompt, 
-                         max_ratio=1.5, overlap_fraction=0.2)
-    return
+    # Step 2: Split the image into segments
+    segments = split_image(img, max_ratio, overlap_fraction)
 
-
-@app.cell
-def __(mo):
-    mo.md(r"""## Without Deskew""")
-    return
-
-
-@app.cell
-def __(np, process_jpeg_folder, transcriber_prompt):
-    process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
-                        output_folder = 'data/BLN600_ratio_1000',
-                        prompt = transcriber_prompt, 
-                         max_ratio=np.inf, overlap_fraction=0.2, deskew =False)
-
-    process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
-                        output_folder = 'data/BLN600_ratio_15',
-                        prompt = transcriber_prompt, 
-                         max_ratio=1.5, overlap_fraction=0.2, deskew = False)
-    return
-
-
-@app.cell
-def __(os, pd, re):
-    import evaluate
-
-    metric_cer = evaluate.load("cer")
-    metric_wer = evaluate.load("wer")
-
-    from markdown_it import MarkdownIt
-    from mdit_plain.renderer import RendererPlain
-
-    parser = MarkdownIt(renderer_cls=RendererPlain)
-
-
-    def compute_metric(row, metric, prediction_col, reference_col):
-        try:
-            # Preprocess the text: lowercasing and replacing line breaks with spaces
-            prediction = re.sub(r'\s+', ' ', row[prediction_col].lower().strip())
-            #prediction = parser.render(prediction)
-            reference = re.sub(r'\s+', ' ', row[reference_col].lower().strip())
-
-            # Ensure the inputs to metric.compute are lists of strings
-            predictions = [prediction]
-            references = [reference]
-            return metric.compute(predictions=predictions, references=references)
-        except KeyError as e:
-           #print(f"KeyError: {e} in row: {row}")
-            return None
-        except Exception as e:
-            #print(f"Error: {e} in row: {row}")
-            return None
-
-    def load_txt_files_to_dataframe(folder_path, text_column_name):
-        #Get list of .txt files
-        txt_files = [f for f in os.listdir(folder_path) if f.endswith('.txt')]
-
-        # Initialize lists to store data
-        file_names = []
-        file_contents = []
-
-        # Read each file
-        for file in txt_files:
-            file_path = os.path.join(folder_path, file)
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-
-            # Append data to lists
-            file_names.append(os.path.splitext(file)[0])  # Remove .txt extension
-            file_contents.append(content)
-
-        # Create DataFrame
-        df = pd.DataFrame({
-            'file_name': file_names,
-            text_column_name: file_contents
-        })
-
-        return df
-
-    def load_and_join_texts_as_dataframe(folder_list):
-        result_df = None
-
-        for folder_path in folder_list:
-            # Extract the folder name from the path
-            folder_name = os.path.basename(folder_path)
-
-            # Load the text files from this folder
-            df = load_txt_files_to_dataframe(folder_path, folder_name)
-            df[folder_name] = df[folder_name].apply(lambda x: parser.render(x))
-            # Rename the 'content' column to the folder name
-            #df = df.rename(columns={'content': folder_name})
-
-            if result_df is None:
-                result_df = df
-            else:
-                # Perform a left join with the existing result
-                result_df = result_df.merge(df, on='file_name', how='left')
-
-        return result_df
+    # Step 3: Process each segment and save results
+    for i, segment in enumerate(segments):
+        # Save the image segment for comparison
+        segment_image_file = os.path.join(output_folder, f"segment_{i+1}.jpg")
+        segment.save(segment_image_file, format="JPEG")
+        print(f"Saved segment image {i+1} to {segment_image_file}")
+        
+        # Process the segment and retrieve content and token usage
+        segment_content, usage = process_segment(segment, prompt)
+        
+        # If content was successfully processed, save it to a text file
+        if segment_content:
+            segment_text_file = os.path.join(output_folder, f"segment_{i+1}.txt")
+            with open(segment_text_file, 'w', encoding='utf-8') as f:
+                f.write(segment_content)
+            print(f"Saved segment text {i+1} to {segment_text_file}")
+        else:
+            print(f"Segment {i+1} processing failed or returned empty content.")
     return (
-        MarkdownIt,
-        RendererPlain,
-        compute_metric,
-        evaluate,
-        load_and_join_texts_as_dataframe,
-        load_txt_files_to_dataframe,
-        metric_cer,
-        metric_wer,
-        parser,
+        f,
+        i,
+        image_path,
+        img,
+        max_ratio,
+        output_folder,
+        overlap_fraction,
+        prompt,
+        segment,
+        segment_content,
+        segment_image_file,
+        segment_text_file,
+        segments,
+        usage,
     )
 
 
 @app.cell
-def __(data_folder, load_and_join_texts_as_dataframe, os):
-    df = load_and_join_texts_as_dataframe([os.path.join(data_folder, 'BLN600', 'Ground Truth'),
-                                           os.path.join(data_folder, 'BLN600', 'OCR Text'),
-                                          os.path.join(data_folder, 'BLN600_deskew'),
-                                          os.path.join(data_folder, 'BLN600_deskew_ratio_15'),
-                                          os.path.join(data_folder, 'BLN600_ratio_1000')])
-    return (df,)
-
-
-@app.cell
-def __(compute_metric, df, metric_cer, metric_wer):
-    df['cer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='OCR Text', reference_col='Ground Truth')
-    df['wer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_wer, prediction_col='OCR Text', reference_col='Ground Truth')
-
-    df['cer_deskew_1000'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_deskew', reference_col='Ground Truth')
-
-
-    df['cer_deskew_15'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_deskew_ratio_15', reference_col='Ground Truth')
-
-    df['cer_nodeskew_1000'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_ratio_1000', reference_col='Ground Truth')
-
-    return
-
-
-@app.cell
-def __(df):
-    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15','cer_nodeskew_1000']].describe()
-    return
-
-
-@app.cell
-def __(df):
-    df2 = df.copy()
-    df2['cer_diff_deskew'] = df2['cer_nodeskew_1000'] - df2['cer_deskew_1000']
-
-    df2['cer_diff_ratio'] = df2['cer_deskew_1000'] - df2['cer_deskew_15']
-
-    df2[['file_name', 'cer_diff_deskew', 'cer_diff_ratio' ]]
-    return (df2,)
-
-
-@app.cell
-def __():
-    import seaborn as sns
-    return (sns,)
-
-
-@app.cell
-def __(df2, sns):
-    sns.scatterplot(data = df2, x = 'cer_diff_deskew', y = 'cer_diff_ratio')
+def __(segments):
+    len(segments)
     return
 
 

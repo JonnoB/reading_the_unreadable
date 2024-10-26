@@ -25,6 +25,8 @@ def __():
     from io import BytesIO
     from tqdm import tqdm
 
+    import seaborn as sns
+
     import psutil
     import traceback
     import re
@@ -74,6 +76,7 @@ def __():
         save_folder,
         scale_bbox,
         shutil,
+        sns,
         time,
         tqdm,
         traceback,
@@ -107,9 +110,10 @@ def __(
     tqdm,
     wand,
 ):
-    def split_image(image, max_ratio=1.5, overlap_fraction=0.1, max_segments=10):
+    def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=10):
         """
         Split an image into segments based on a maximum aspect ratio.
+        The final segment will maintain the same ratio as other segments.
 
         Args:
             image: PIL Image object
@@ -121,23 +125,48 @@ def __(
             list: List of PIL Image objects (segments)
         """
         width, height = image.size
-        current_ratio = width / height
+        current_ratio = height / width
 
+        # If the image ratio is already acceptable, return the original image
         if current_ratio <= max_ratio:
             return [image]
 
-        segment_height = int(width / max_ratio)
-        overlap_height = int(segment_height * overlap_fraction)
+        # Calculate the ideal height for each segment
+        segment_height = int(width * max_ratio)
+        overlap_pixels = int(segment_height * overlap_fraction)
 
         segments = []
-        y = 0
-        while y < height and len(segments) < max_segments:
-            bottom = min(y + segment_height, height)
-            segment = image.crop((0, y, width, bottom))
+        y_start = 0
+
+        while y_start < height and len(segments) < max_segments:
+            y_end = min(y_start + segment_height, height)
+
+            # Check if this would be the final segment
+            remaining_height = height - y_start
+            if remaining_height < segment_height and remaining_height / width < max_ratio:
+                # Adjust y_start backwards to maintain the desired ratio for the final segment
+                y_start = height - segment_height
+                y_end = height
+
+                # If this isn't the first segment, add it
+                if segments:
+                    segment = image.crop((0, y_start, width, y_end))
+                    segments.append(segment)
+                break
+
+            # Create the segment
+            segment = image.crop((0, y_start, width, y_end))
             segments.append(segment)
-            y = bottom - overlap_height
+
+            # If we've reached the bottom of the image, break
+            if y_end >= height:
+                break
+
+            # Calculate the start position for the next segment
+            y_start = y_end - overlap_pixels
 
         return segments
+
 
 
     # Core process functions
@@ -238,7 +267,6 @@ def __(
                 log_df.to_csv(log_file_path, index=False)
 
         return log_df
-
     return (
         initialize_log_file,
         load_image,
@@ -254,7 +282,6 @@ def __(
 @app.cell
 def __():
     transcriber_prompt = "You are an expert at transcription. The text is from a 19th century news article. Please transcribe exactly the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only."
-
     return (transcriber_prompt,)
 
 
@@ -266,7 +293,6 @@ def __(mo):
 
 @app.cell
 def __(np, process_jpeg_folder, transcriber_prompt):
-
     process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
                         output_folder = 'data/BLN600_deskew',
                         prompt = transcriber_prompt, 
@@ -391,16 +417,20 @@ def __(os, pd, re):
 
 @app.cell
 def __(data_folder, load_and_join_texts_as_dataframe, os):
+
     df = load_and_join_texts_as_dataframe([os.path.join(data_folder, 'BLN600', 'Ground Truth'),
-                                           os.path.join(data_folder, 'BLN600', 'OCR Text'),
-                                          os.path.join(data_folder, 'BLN600_deskew'),
-                                          os.path.join(data_folder, 'BLN600_deskew_ratio_15'),
-                                          os.path.join(data_folder, 'BLN600_ratio_1000')])
+                                               os.path.join(data_folder, 'BLN600', 'OCR Text'),
+                                              os.path.join(data_folder, 'BLN600_deskew'),
+                                              os.path.join(data_folder, 'BLN600_deskew_ratio_15'),
+                                              #os.path.join(data_folder, 'BLN600_ratio_1000')
+                                              ])
+
     return (df,)
 
 
 @app.cell
 def __(compute_metric, df, metric_cer, metric_wer):
+
     df['cer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='OCR Text', reference_col='Ground Truth')
     df['wer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_wer, prediction_col='OCR Text', reference_col='Ground Truth')
 
@@ -409,37 +439,154 @@ def __(compute_metric, df, metric_cer, metric_wer):
 
     df['cer_deskew_15'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_deskew_ratio_15', reference_col='Ground Truth')
 
-    df['cer_nodeskew_1000'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_ratio_1000', reference_col='Ground Truth')
+    #df['cer_nodeskew_1000'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_ratio_1000', reference_col='Ground Truth')
 
     return
 
 
 @app.cell
 def __(df):
-    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15','cer_nodeskew_1000']].describe()
+    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15'#,'cer_nodeskew_1000'
+       ]].describe()
     return
 
 
 @app.cell
 def __(df):
-    df2 = df.copy()
-    df2['cer_diff_deskew'] = df2['cer_nodeskew_1000'] - df2['cer_deskew_1000']
+    df[['file_name', 'cer_deskew_15']]
+    return
 
-    df2['cer_diff_ratio'] = df2['cer_deskew_1000'] - df2['cer_deskew_15']
 
-    df2[['file_name', 'cer_diff_deskew', 'cer_diff_ratio' ]]
-    return (df2,)
+@app.cell
+def __(mo):
+    mo.md(
+        """
+        df2 = df.copy()
+        df2['cer_diff_deskew'] = df2['cer_nodeskew_1000'] - df2['cer_deskew_1000']
+
+        df2['cer_diff_ratio'] = df2['cer_deskew_1000'] - df2['cer_deskew_15']
+
+        df2[['file_name', 'cer_diff_deskew', 'cer_diff_ratio' ]]
+        """
+    )
+    return
+
+
+@app.cell
+def __(mo):
+    mo.md("""sns.scatterplot(data = df2, x = 'cer_diff_deskew', y = 'cer_diff_ratio')""")
+    return
 
 
 @app.cell
 def __():
-    import seaborn as sns
-    return (sns,)
+    first_text = s1= """Mrs. Elizabeth Elson, the servant alluded to, said: she found Mrs. Rawlings at a house in the Waterloo-road, and on telling her for what purpose she had come to town, she replied that unless she got her money, as she was in the habit of doing, from her husband, she should poison the children and herself. This threat she repeated, and was in a violent passion.
+
+    Joseph Coster, one of the summonsing officers, said: that a warrant had been placed in his hands to apprehend Mrs. Rawlings, and he found her walking in the Waterloo-road. He told her he had a warrant for her apprehension, on a charge of threatening to murder her children. She replied that she did not consider what she said in the nature of a threat. What she said was, that if she did not get her money she should take she repeated that unless she got her money, she was in the habit of doing; from her husband, she should poison the children and herself. This threat she repeated, and was in a violent passion."""
+
+
+    second_text= s2 = """Joseph Coster, one of the summonsing officers, said that a warrant had been placed in his hands to apprehend Mrs. Rawlings, and he found her walking in the Waterloo-road. He told her he had a warrant for her apprehension, on a charge of threatening to murder her children. She replied that she did not consider what she said in the nature of a threat. What she said was, that if she did not get her money she should take her children to the top of the house and fling them out of the window, and then jump out herself. She then asked him to go to the house where her children were. He did so, and that house was a common brothel.
+
+    Mrs. Rawlings, whose tone, manner, and language, stamped her as a person of superior education, but whose countenance, as evidently once handsome, now showed the bloated and sodden appearance produced by excessive drink, said that she was not aware of the character of the house when she took lodgings there, as it was not in every place that a mother with three children could get a lodging. She admitted that she had got into a passion on hearing a threat from the old servant of the family to take away her children, leaving her destitute and unprovided for; and with that feeling she had used expressions which she did not mean. She declared she had no intention of leaving her children.
+    """
+    return first_text, s1, s2, second_text
 
 
 @app.cell
-def __(df2, sns):
-    sns.scatterplot(data = df2, x = 'cer_diff_deskew', y = 'cer_diff_ratio')
+def __(first_text, knit_strings, second_text):
+    knit_strings(first_text, second_text)
+    return
+
+
+@app.cell
+def __():
+    import difflib
+
+    def knit_strings2(s1: str, s2: str) -> str:
+        """
+        Knit two strings together based on their longest common substring.
+
+        This function finds the longest common substring between s1 and s2,
+        then combines them by keeping the text up to but excluding the matching
+        substring from s1, and adding the remaining text from s2.
+
+        Args:
+            s1 (str): The first string.
+            s2 (str): The second string.
+
+        Returns:
+            str: A new string combining s1 and s2, with proper merging at the common substring.
+        """
+        # Create a SequenceMatcher object to compare the two strings
+        matcher = difflib.SequenceMatcher(None, s1, s2, autojunk=False)
+
+        # Find the longest matching substring
+        match = matcher.find_longest_match(0, len(s1), 0, len(s2))
+        
+        # If no match is found, simply concatenate the strings
+        if match.size == 0:
+            return s1 + s2
+
+        # Take s1 up to but not including the match
+        result = s1[:match.a]
+        
+        # Add everything from s2 that starts from the match
+        result += s2[match.b:]
+        
+        return result
+
+    return difflib, knit_strings2
+
+
+@app.cell
+def __(first_text, knit_strings2, second_text):
+    knit_strings2(first_text, second_text)
+    return
+
+
+@app.cell
+def __(difflib, s1, s2):
+    matcher = difflib.SequenceMatcher(None, s1, s2, autojunk=False)
+
+    # Find the longest matching substring
+    match = matcher.find_longest_match(0, len(s1), 0, len(s2))
+    return match, matcher
+
+
+@app.cell
+def __(match):
+    match
+    return
+
+
+@app.cell
+def __(match, s1):
+    s1[:match.a]
+    return
+
+
+@app.cell
+def __(difflib):
+    s12 = """Mrs. Elizabeth Elson, the servant alluded to, said: she found Mrs. Rawlings at a house in the Waterloo-road, and on telling her for what purpose she had come to town, she replied that unless she got her money, as she was in the habit of doing, from her husband, she should poison the children and herself. This threat she repeated, and was in a violent passion.
+
+    Joseph Coster, one of the summonsing officers, said: that a warrant had been placed in his hands to apprehend Mrs. Rawlings, and he found her walking in the Waterloo-road. He told her he had a warrant for her apprehension, on a charge of threatening to murder her children. She replied that she did not consider what she said in the nature of a threat. What she said was, that if she did not get her money she should take she repeated that unless she got her money, she was in the habit of doing; from her husband, she should poison the children and herself. This threat she repeated, and was in a violent passion."""
+
+
+    s22 = """Joseph Coster, one of the summonsing officers, said that a warrant had been placed in his hands to apprehend Mrs. Rawlings, and he found her walking in the Waterloo-road. He told her he had a warrant for her apprehension, on a charge of threatening to murder her children. She replied that she did not consider what she said in the nature of a threat. What she said was, that if she did not get her money she should take her children to the top of the house and fling them out of the window, and then jump out herself. She then asked him to go to the house where her children were. He did so, and that house was a common brothel."""
+
+    matcher2 = difflib.SequenceMatcher(None, s12, s22)
+    return matcher2, s12, s22
+
+
+@app.cell
+def __(matcher2, s12, s22):
+    matcher2.find_longest_match(0, len(s12), 0, len(s22))
+    return
+
+
+@app.cell
+def __(s12):
+    s12[0:5]
     return
 
 

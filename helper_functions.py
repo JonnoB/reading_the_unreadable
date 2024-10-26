@@ -255,7 +255,7 @@ def knit_strings(s1: str, s2: str) -> str:
         'Hello world of Python'
     """
     # Create a SequenceMatcher object to compare the two strings
-    matcher = difflib.SequenceMatcher(None, s1, s2)
+    matcher = difflib.SequenceMatcher(None, s1, s2, autojunk=False)
 
     # Find the longest matching substring
     # match.a: start index of match in s1

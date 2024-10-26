@@ -354,6 +354,9 @@ def process_image_with_api(image_base64, prompt,  model="mistral/pixtral-12b-240
         print(f"An error occurred in process_image_with_api: {str(e)}")
         raise  # Re-raise the exception to trigger a retry
 
+
+
+
 def process_page(row, image_drive, page_dict, client, save_folder, dataset_df, log_df):
     """
     Process a single page of a newspaper, extracting and saving article content.

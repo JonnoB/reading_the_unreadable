@@ -144,7 +144,7 @@ def __(
         process = psutil.Process(os.getpid())
         return process.memory_info().rss / 1024 / 1024  # in MB
 
-    def process_jpeg_folder(folder_path, output_folder, prompt, max_ratio=1.5, overlap_fraction=0.1):
+    def process_jpeg_folder(folder_path, output_folder, prompt, max_ratio=1.5, overlap_fraction=0.1, deskew=True):
         os.makedirs(output_folder, exist_ok=True)
 
         log_file_path = os.path.join(output_folder, 'processing_log.csv')
@@ -162,47 +162,36 @@ def __(
                 file_path = os.path.join(folder_path, filename)
                 start_time = time.time()
 
-                #print(f"\nStarting to process {filename}")
-                #print(f"Initial memory usage: {get_memory_usage():.2f} MB")
-
                 try:
-                    # Open image with PIL
-                    pil_img = Image.open(file_path)
-                    #print(f"Memory usage after opening image: {get_memory_usage():.2f} MB")
+                    if deskew:
+                        # Perform deskewing using Wand
+                        with wand.image.Image(filename=file_path) as wand_img:
+                            wand_img.deskew(0.4 * wand_img.quantum_range)
+                            # Save temporarily and reload with PIL
+                            temp_path = os.path.join(output_folder, f"temp_deskewed_{filename}")
+                            wand_img.save(filename=temp_path)
 
-                    # Perform deskewing using Wand
-                    with wand.image.Image(filename=file_path) as wand_img:
-                        wand_img.deskew(0.4 * wand_img.quantum_range)
-                        # Save temporarily and reload with PIL
-                        temp_path = os.path.join(output_folder, f"temp_deskewed_{filename}")
-                        wand_img.save(filename=temp_path)
-
-                    # Close original PIL image and load deskewed version
-                    pil_img.close()
-                    img = Image.open(temp_path)
-                    # Remove temporary file
-                    os.remove(temp_path)
-
-                    #print(f"Memory usage after deskewing image: {get_memory_usage():.2f} MB")
+                        # Load deskewed version
+                        img = Image.open(temp_path)
+                        # Remove temporary file
+                        os.remove(temp_path)
+                    else:
+                        # Load image directly without deskewing
+                        img = Image.open(file_path)
 
                     segments = split_image(img, max_ratio, overlap_fraction)
-                    #print(f"Memory usage after splitting image: {get_memory_usage():.2f} MB")
-
 
                     content_list = []
                     total_input_tokens = total_output_tokens = total_tokens = 0
                     sub_images = len(segments)
 
                     for i, segment in enumerate(segments):
-                        #print(f"\nProcessing segment {i+1}/{sub_images}")
-                        #print(f"Segment dimensions: {segment.size}")
                         buffered = BytesIO()
                         segment.save(buffered, format="JPEG")
                         image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-                        #print(f"Memory usage after encoding segment {i+1}: {get_memory_usage():.2f} MB")
 
                         try:
-                            segment_content, usage = process_image_with_api(image_base64, prompt = prompt)
+                            segment_content, usage = process_image_with_api(image_base64, prompt=prompt)
                             if segment_content is not None and usage is not None:
                                 content_list.append(segment_content)
                                 input_tokens, output_tokens, segment_total_tokens = usage
@@ -211,14 +200,11 @@ def __(
                                 total_tokens += segment_total_tokens
                             else:
                                 print(f"Skipping segment {i+1} due to API error")
-                         #   print(f"Memory usage after API processing of segment {i+1}: {get_memory_usage():.2f} MB")
                         except Exception as e:
                             print(f"Error in process_image_with_api for segment {i+1}: {str(e)}")
                             print(f"Skipping segment {i+1}")
 
-                    #print("\nCombining content from all segments")
                     combined_content = knit_string_list(content_list)
-                    #print(f"Memory usage after combining content: {get_memory_usage():.2f} MB")
 
                     output_file = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}.txt")
                     with open(output_file, 'w', encoding='utf-8') as f:
@@ -231,9 +217,6 @@ def __(
                     processing_time = time.time() - start_time
                     status = 'Failed'
                     total_input_tokens = total_output_tokens = total_tokens = sub_images = 0
-                    #print(f"Error processing {filename}: {str(e)}")
-                    #print(f"Error type: {type(e).__name__}")
-                    #print(f"Error traceback: {traceback.format_exc()}")
 
                 finally:
                     # Ensure the image is closed
@@ -253,10 +236,6 @@ def __(
 
                 log_df = pd.concat([log_df[log_df['file_name'] != filename], log_entry], ignore_index=True)
                 log_df.to_csv(log_file_path, index=False)
-
-                #print(f"\nFinished processing {filename}")
-                #print(f"Final memory usage: {get_memory_usage():.2f} MB")
-                #print("--------------------")
 
         return log_df
     return get_memory_usage, process_jpeg_folder, split_image
@@ -283,7 +262,16 @@ def __(process_jpeg_folder, transcriber_prompt):
 
 
 @app.cell
-def __():
+def __(np, process_jpeg_folder, transcriber_prompt):
+    process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
+                        output_folder = 'data/BLN600_ratio_1000',
+                        prompt = transcriber_prompt, 
+                         max_ratio=np.inf, overlap_fraction=0.1, deskew =False)
+
+    process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
+                        output_folder = 'data/BLN600_ratio_15',
+                        prompt = transcriber_prompt, 
+                         max_ratio=1.5, overlap_fraction=0.1, deskew = False)
     return
 
 
@@ -382,7 +370,8 @@ def __(data_folder, load_and_join_texts_as_dataframe, os):
     df = load_and_join_texts_as_dataframe([os.path.join(data_folder, 'BLN600', 'Ground Truth'),
                                            os.path.join(data_folder, 'BLN600', 'OCR Text'),
                                           os.path.join(data_folder, 'BLN600_deskew'),
-                                          os.path.join(data_folder, 'BLN600_deskew_ratio_15')])
+                                          os.path.join(data_folder, 'BLN600_deskew_ratio_15'),
+                                          os.path.join(data_folder, 'BLN600_ratio_1000')])
     return (df,)
 
 
@@ -391,17 +380,42 @@ def __(compute_metric, df, metric_cer, metric_wer):
     df['cer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='OCR Text', reference_col='Ground Truth')
     df['wer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_wer, prediction_col='OCR Text', reference_col='Ground Truth')
 
-    df['cer_whole'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_deskew', reference_col='Ground Truth')
-    df['wer_whole'] = df.apply(compute_metric, axis=1, metric =metric_wer, prediction_col='BLN600_deskew', reference_col='Ground Truth')
+    df['cer_deskew_1000'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_deskew', reference_col='Ground Truth')
 
-    df['cer_15'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_deskew_ratio_15', reference_col='Ground Truth')
-    df['wer_15'] = df.apply(compute_metric, axis=1, metric =metric_wer, prediction_col='BLN600_deskew_ratio_15', reference_col='Ground Truth')
+
+    df['cer_deskew_15'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_deskew_ratio_15', reference_col='Ground Truth')
+
+    df['cer_nodeskew_1000'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_ratio_1000', reference_col='Ground Truth')
+
     return
 
 
 @app.cell
 def __(df):
-    df[['file_name','cer_ocr', 'wer_ocr','cer_whole','wer_whole',  'cer_15','wer_15' ]].describe()
+    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15','cer_nodeskew_1000']].describe()
+    return
+
+
+@app.cell
+def __(df):
+    df2 = df.copy()
+    df2['cer_diff_deskew'] = df2['cer_nodeskew_1000'] - df2['cer_deskew_1000']
+
+    df2['cer_diff_ratio'] = df2['cer_deskew_1000'] - df2['cer_deskew_15']
+
+    df2[['file_name', 'cer_diff_deskew', 'cer_diff_ratio' ]]
+    return (df2,)
+
+
+@app.cell
+def __():
+    import seaborn as sns
+    return (sns,)
+
+
+@app.cell
+def __(df2, sns):
+    sns.scatterplot(data = df2, x = 'cer_diff_deskew', y = 'cer_diff_ratio')
     return
 
 

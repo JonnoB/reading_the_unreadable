@@ -417,14 +417,12 @@ def __(os, pd, re):
 
 @app.cell
 def __(data_folder, load_and_join_texts_as_dataframe, os):
-
     df = load_and_join_texts_as_dataframe([os.path.join(data_folder, 'BLN600', 'Ground Truth'),
                                                os.path.join(data_folder, 'BLN600', 'OCR Text'),
                                               os.path.join(data_folder, 'BLN600_deskew'),
                                               os.path.join(data_folder, 'BLN600_deskew_ratio_15'),
-                                              #os.path.join(data_folder, 'BLN600_ratio_1000')
+                                              os.path.join(data_folder, 'BLN600_ratio_1000')
                                               ])
-
     return (df,)
 
 
@@ -439,21 +437,24 @@ def __(compute_metric, df, metric_cer, metric_wer):
 
     df['cer_deskew_15'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_deskew_ratio_15', reference_col='Ground Truth')
 
-    #df['cer_nodeskew_1000'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_ratio_1000', reference_col='Ground Truth')
+
+    df['cer_nodeskew_1000'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_ratio_1000', reference_col='Ground Truth')
+
+    df['cer_nodeskew_15'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_ratio_15', reference_col='Ground Truth')
 
     return
 
 
 @app.cell
 def __(df):
-    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15'#,'cer_nodeskew_1000'
+    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15','cer_nodeskew_1000','cer_nodeskew_15'
        ]].describe()
     return
 
 
 @app.cell
-def __(df):
-    df[['file_name', 'cer_deskew_15']]
+def __():
+    #df[['file_name', 'cer_deskew_15']]
     return
 
 
@@ -522,19 +523,18 @@ def __():
 
         # Find the longest matching substring
         match = matcher.find_longest_match(0, len(s1), 0, len(s2))
-        
+
         # If no match is found, simply concatenate the strings
         if match.size == 0:
             return s1 + s2
 
         # Take s1 up to but not including the match
         result = s1[:match.a]
-        
+
         # Add everything from s2 that starts from the match
         result += s2[match.b:]
-        
-        return result
 
+        return result
     return difflib, knit_strings2
 
 

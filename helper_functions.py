@@ -234,7 +234,7 @@ def crop_and_encode_images(page, bounding_boxes, original_size, page_size):
 
 
 
-def knit_strings(s1: str, s2: str) -> str:
+def knit_strings2(s1: str, s2: str) -> str:
     """
     Knit two strings together based on their longest common substring.
 
@@ -267,12 +267,11 @@ def knit_strings(s1: str, s2: str) -> str:
     if match.size == 0:
         return s1 + s2
 
-    # Start with the entire first string
-    result = s1
+    # Take s1 up to but not including the match
+    result = s1[:match.a]
 
-    # Append the part of s2 that comes after the overlapping portion
-    # match.size gives us the length of the overlap, so we slice s2 from that index
-    result += s2[match.size:]
+    # Add everything from s2 that starts from the match
+    result += s2[match.b:]
     
     return result
 

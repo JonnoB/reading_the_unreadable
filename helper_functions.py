@@ -234,25 +234,20 @@ def crop_and_encode_images(page, bounding_boxes, original_size, page_size):
 
 
 
-def knit_strings2(s1: str, s2: str) -> str:
+def knit_strings(s1: str, s2: str) -> str:
     """
     Knit two strings together based on their longest common substring.
 
     This function finds the longest common substring between s1 and s2,
-    then combines them by appending the non-overlapping part of s2 to s1.
-    If no common substring is found, it simply concatenates the two strings.
-
+    then combines them by keeping the text up to but excluding the matching
+    substring from s1, and adding the remaining text from s2.
 
     Args:
         s1 (str): The first string.
         s2 (str): The second string.
 
     Returns:
-        str: A new string combining s1 and s2, with the overlapping part appearing only once.
-
-    Example:
-        >>> knit_strings("Hello world", "world of Python")
-        'Hello world of Python'
+        str: A new string combining s1 and s2, with proper merging at the common substring.
     """
     # Create a SequenceMatcher object to compare the two strings
     matcher = difflib.SequenceMatcher(None, s1, s2, autojunk=False)

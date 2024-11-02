@@ -408,7 +408,7 @@ def __(difflib):
         # match.b: start index of match in s2
         # match.size: length of the match
         match = matcher.find_longest_match(0, len(s1), 0, len(s2))
-        
+
         # If no match is found (match.size == 0), simply concatenate the strings
         if match.size == 0:
             return s1 + s2
@@ -418,7 +418,7 @@ def __(difflib):
 
         # Add everything from s2 that starts from the match
         result += s2[match.b:]
-        
+
         return result
     return (knit_strings2,)
 

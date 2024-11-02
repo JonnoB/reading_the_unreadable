@@ -281,7 +281,7 @@ def __(
 
 @app.cell
 def __():
-    transcriber_prompt = "You are an expert at transcription. The text is from a 19th century news article. Please transcribe exactly the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only."
+    transcriber_prompt = "You are an expert at transcription. The text is from a 19th century news article. Please transcribe exactly, including linebreaks, the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only."
     return (transcriber_prompt,)
 
 
@@ -302,6 +302,11 @@ def __(np, process_jpeg_folder, transcriber_prompt):
                         output_folder = 'data/BLN600_deskew_ratio_15',
                         prompt = transcriber_prompt, 
                          max_ratio=1.5, overlap_fraction=0.2)
+
+    process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
+                        output_folder = 'data/BLN600_deskew_ratio_10',
+                        prompt = transcriber_prompt, 
+                         max_ratio=1.0, overlap_fraction=0.2)
     return
 
 
@@ -322,6 +327,11 @@ def __(np, process_jpeg_folder, transcriber_prompt):
                         output_folder = 'data/BLN600_ratio_15',
                         prompt = transcriber_prompt, 
                          max_ratio=1.5, overlap_fraction=0.2, deskew = False)
+
+    process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
+                        output_folder = 'data/BLN600_ratio_10',
+                        prompt = transcriber_prompt, 
+                         max_ratio=10, overlap_fraction=0.2, deskew = False)
     return
 
 
@@ -421,14 +431,15 @@ def __(data_folder, load_and_join_texts_as_dataframe, os):
                                                os.path.join(data_folder, 'BLN600', 'OCR Text'),
                                               os.path.join(data_folder, 'BLN600_deskew'),
                                               os.path.join(data_folder, 'BLN600_deskew_ratio_15'),
-                                              os.path.join(data_folder, 'BLN600_ratio_1000')
+                                              os.path.join(data_folder, 'BLN600_ratio_1000'),
+                                            os.path.join(data_folder, 'BLN600_ratio_15')
+
                                               ])
     return (df,)
 
 
 @app.cell
 def __(compute_metric, df, metric_cer, metric_wer):
-
     df['cer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='OCR Text', reference_col='Ground Truth')
     df['wer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_wer, prediction_col='OCR Text', reference_col='Ground Truth')
 
@@ -441,21 +452,104 @@ def __(compute_metric, df, metric_cer, metric_wer):
     df['cer_nodeskew_1000'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_ratio_1000', reference_col='Ground Truth')
 
     df['cer_nodeskew_15'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_ratio_15', reference_col='Ground Truth')
-
     return
 
 
 @app.cell
 def __(df):
-    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15','cer_nodeskew_1000','cer_nodeskew_15'
+    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15','cer_nodeskew_1000','cer_nodeskew_15',
        ]].describe()
     return
 
 
 @app.cell
-def __():
-    #df[['file_name', 'cer_deskew_15']]
+def __(df, np, plt, sns):
+    _plot_df = df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15','cer_nodeskew_1000','cer_nodeskew_15']].melt(id_vars = 'file_name')
+
+    _plot_df['deskew'] = np.where(_plot_df['variable'].str.contains('no'),'no deskew', 'deskew' ) 
+
+    _mapping = {
+        'cer_ocr': 'none',
+        'cer_deskew_1000': 'none',
+        'cer_deskew_15': '1.5',
+        'cer_nodeskew_1000': 'none',
+        'cer_nodeskew_15': '1.5'
+    }
+
+    # Create a new column with the mapped values
+    _plot_df['mapped_category'] = _plot_df['variable'].map(_mapping)
+
+    # Create the histogram
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(data=_plot_df, x='mapped_category', y='value', hue = 'deskew')
+    plt.title('Distribution by Category')
+    plt.xlabel('Category')
+    plt.ylabel('Value')
+    plt.show()
     return
+
+
+@app.cell
+def __(df, np, pd, plt, sns):
+    _plot_df = df[['file_name','cer_ocr','cer_deskew_15','cer_nodeskew_15']].melt(id_vars = 'file_name')
+
+    _plot_df['deskew'] = np.where(_plot_df['variable'].str.contains('no'),'no deskew', 'deskew' ) 
+
+    mapping = {
+        'cer_ocr': 'OCR',
+        'cer_deskew_1000': 'none',
+        'cer_deskew_15': '1.5',
+        'cer_nodeskew_1000': 'none',
+        'cer_nodeskew_15': '1.5'
+    }
+
+    # Create a new column with the mapped values
+    _plot_df['mapped_category'] = _plot_df['variable'].map(mapping)
+
+    # Function to calculate bootstrapped statistics
+    def bootstrap_stats(data, n_bootstrap=1000, statistic='mean'):
+        stats_func = np.mean if statistic == 'mean' else np.median
+        bootstrap_stats = []
+        for _ in range(n_bootstrap):
+            sample = np.random.choice(data, size=len(data), replace=True)
+            bootstrap_stats.append(stats_func(sample))
+        return bootstrap_stats
+
+    # Calculate bootstrapped statistics for each group
+    bootstrap_results = []
+    for (var, deskew), group in _plot_df.groupby(['variable', 'deskew']):
+        bootstrap_values = bootstrap_stats(group['value'].values, n_bootstrap=1000, statistic='mean')  # or 'median'
+        bootstrap_results.extend([{
+            'variable': var,
+            'deskew': deskew,
+            'bootstrapped_value': val
+        } for val in bootstrap_values])
+
+    # Create new dataframe with bootstrapped results
+    bootstrap_df = pd.DataFrame(bootstrap_results)
+    bootstrap_df['mapped_category'] = bootstrap_df['variable'].map(mapping)
+
+    # Create the boxplot
+    plt.figure(figsize=(10, 6))
+    sns.boxplot(data=bootstrap_df, 
+                x='mapped_category', 
+                y='bootstrapped_value', 
+                hue='deskew')
+
+    plt.title('Distribution of Bootstrapped Means by Category')
+    plt.xlabel('Category')
+    plt.ylabel('Bootstrapped Mean Value')
+    plt.show()
+    return (
+        bootstrap_df,
+        bootstrap_results,
+        bootstrap_stats,
+        bootstrap_values,
+        deskew,
+        group,
+        mapping,
+        var,
+    )
 
 
 @app.cell

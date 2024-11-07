@@ -12,7 +12,24 @@ from datetime import datetime
 import litellm
 from tenacity import retry, stop_after_attempt, wait_exponential
 
+import wand.image
+from PIL import Image
+from io import BytesIO
 import logging
+from tqdm import tqdm
+import re
+from markdown_it import MarkdownIt
+from mdit_plain.renderer import RendererPlain
+
+parser = MarkdownIt(renderer_cls=RendererPlain)
+
+
+##
+## The functions need an overhaul. for example the function 'process_page' takes a pdf converts it to jpg crops it and sends to api to extract text
+## In addition convert_pdf_to_image converts a pdf to a jpg and stops there. These two processes are not compatible. 'process page' and the older
+## Functions need to be rebuild or dropped to make a clear a modular process
+##
+## The processes should all start on the basis that the image is a jpg or PNG.
 
 def create_page_dict(df):
     """
@@ -120,6 +137,9 @@ def crop_and_encode_image(page, x0, y0, x1, y1):
 
 def split_tall_box(page, x0, y0, x1, y1, max_height, overlap):
     """
+
+    This function should be deleted when 'process_bounding_box' is deleted
+
     Split a tall box from a page into multiple smaller boxes of a specified maximum height.
 
     This function takes a tall box defined by its coordinates and splits it into
@@ -157,6 +177,8 @@ def split_tall_box(page, x0, y0, x1, y1, max_height, overlap):
 def process_bounding_box(page, key, coords, original_size, page_size):
 
     """
+    This function should be deleted when all useful code is extracted
+
     Process a bounding box on a page, scaling coordinates and handling tall boxes.
 
     This function takes a bounding box, scales its coordinates to match the current page size,
@@ -538,3 +560,412 @@ def save_article_text(article_id, full_string, save_folder, dataset_df):
             file.write(full_string)
     except Exception as e:
         logging.error(f"Error saving article {article_id}: {str(e)}")
+
+
+
+def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=300, image_format='PNG'):
+    """
+    Converts each page of a PDF file into an image and saves the images to an output folder.
+
+    Parameters
+    ----------
+    pdf_path : str
+        Path to the PDF file to be converted.
+    output_folder : str, optional
+        Directory where the output images will be saved. Defaults to 'output_images'.
+    dpi : int, optional
+        Resolution for the converted images, in dots per inch. Higher values increase image quality.
+    image_format : str, optional
+        Image format for the output files. Supported formats are 'PNG' and 'JPEG'. Defaults to 'PNG'.
+
+    Raises
+    ------
+    ValueError
+        If an unsupported image format is specified.
+
+    Notes
+    ------
+    The function names each image file with the original PDF filename, followed by '_page_X', 
+    where X is the page number.
+
+    Examples
+    --------
+    >>> convert_pdf_to_image('example.pdf', output_folder='images', dpi=200, image_format='JPEG')
+    """
+    # Ensure the output folder exists
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Get the original file name without extension
+    original_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+
+    # Convert PDF to images
+    images = convert_from_path(pdf_path, dpi=dpi)
+
+    # Determine file extension based on format
+    format_map = {'PNG': 'png', 'JPEG': 'jpg'}
+    file_extension = format_map.get(image_format.upper())
+    if not file_extension:
+        raise ValueError("Unsupported format. Use 'PNG' or 'JPEG'.")
+
+    # Save each page as an image file
+    for i, image in enumerate(images):
+        output_file = os.path.join(output_folder, f'{original_filename}_page_{i + 1}.{file_extension}')
+        image.save(output_file, image_format.upper())
+
+
+def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=10):
+    """
+    Split an image into segments based on a maximum aspect ratio.
+    The final segment will maintain the same ratio as other segments.
+
+    Args:
+        image: PIL Image object
+        max_ratio (float): Maximum width-to-height ratio before splitting
+        overlap_fraction (float): Fraction of overlap between segments
+        max_segments (int): Maximum number of segments to create
+
+    Returns:
+        list: List of PIL Image objects (segments)
+    """
+    width, height = image.size
+    current_ratio = height / width
+
+    # If the image ratio is already acceptable, return the original image
+    if current_ratio <= max_ratio:
+        return [image]
+
+    # Calculate the ideal height for each segment
+    segment_height = int(width * max_ratio)
+    overlap_pixels = int(segment_height * overlap_fraction)
+
+    segments = []
+    y_start = 0
+
+    while y_start < height and len(segments) < max_segments:
+        y_end = min(y_start + segment_height, height)
+
+        # Check if this would be the final segment
+        remaining_height = height - y_start
+        if remaining_height < segment_height and remaining_height / width < max_ratio:
+            # Adjust y_start backwards to maintain the desired ratio for the final segment
+            y_start = height - segment_height
+            y_end = height
+
+            # If this isn't the first segment, add it
+            if segments:
+                segment = image.crop((0, y_start, width, y_end))
+                segments.append(segment)
+            break
+
+        # Create the segment
+        segment = image.crop((0, y_start, width, y_end))
+        segments.append(segment)
+
+        # If we've reached the bottom of the image, break
+        if y_end >= height:
+            break
+
+        # Calculate the start position for the next segment
+        y_start = y_end - overlap_pixels
+
+    return segments
+
+
+
+# Core process functions
+
+def initialize_log_file(output_folder):
+    """
+    Initialize or load an existing log file for tracking image processing results.
+
+    Args:
+        output_folder (str): Path to the folder where the log file will be stored.
+
+    Returns:
+        tuple: A tuple containing:
+            - str: Path to the log file
+            - pandas.DataFrame: DataFrame containing the log entries
+    """
+    log_file_path = os.path.join(output_folder, 'processing_log.csv')
+    if os.path.exists(log_file_path):
+        log_df = pd.read_csv(log_file_path)
+    else:
+        log_df = pd.DataFrame(columns=['file_name', 'processing_time', 'input_tokens', 'output_tokens', 'total_tokens', 'sub_images', 'status', 'timestamp'])
+    return log_file_path, log_df
+
+def load_image(file_path, deskew, output_folder):
+    """
+    Load and optionally deskew an image file.
+
+    Args:
+        file_path (str): Path to the image file to be loaded.
+        deskew (bool): Whether to apply deskewing to the image.
+        output_folder (str): Path to store temporary files during deskewing.
+
+    Returns:
+        PIL.Image: Loaded (and potentially deskewed) image object.
+    """
+    if deskew:
+        with wand.image.Image(filename=file_path) as wand_img:
+            wand_img.deskew(0.4 * wand_img.quantum_range)
+            temp_path = os.path.join(output_folder, f"temp_deskewed_{os.path.basename(file_path)}")
+            wand_img.save(filename=temp_path)
+            img = Image.open(temp_path)
+            os.remove(temp_path)
+    else:
+        img = Image.open(file_path)
+    return img
+
+def process_image_segments(segments, prompt):
+    """
+    Process multiple image segments and aggregate their results.
+
+    Args:
+        segments (list): List of image segments to process.
+        prompt (str): The prompt to use for image processing.
+
+    Returns:
+        tuple: A tuple containing:
+            - list: Processed content for each segment
+            - int: Total input tokens used
+            - int: Total output tokens used
+            - int: Total tokens used
+            - int: Number of segments processed
+    """
+    content_list = []
+    total_input_tokens = total_output_tokens = total_tokens = 0
+
+    for i, segment in enumerate(segments):
+        segment_content, usage = process_segment(segment, prompt)
+        if segment_content and usage:
+            content_list.append(segment_content)
+            input_tokens, output_tokens, segment_total_tokens = usage
+            total_input_tokens += input_tokens
+            total_output_tokens += output_tokens
+            total_tokens += segment_total_tokens
+
+    return content_list, total_input_tokens, total_output_tokens, total_tokens, len(segments)
+
+
+def process_segment(segment, prompt):
+    """
+    Process a single image segment using the API.
+
+    Args:
+        segment (PIL.Image): Image segment to process.
+        prompt (str): The prompt to use for image processing.
+
+    Returns:
+        tuple: A tuple containing:
+            - str: Processed content from the segment
+            - tuple or None: Token usage statistics (input_tokens, output_tokens, total_tokens)
+    """
+    buffered = BytesIO()
+    segment.save(buffered, format="JPEG")
+    image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+    try:
+        segment_content, usage = process_image_with_api(image_base64, prompt=prompt)
+    except Exception as e:
+        print(f"Error in process_image_with_api for segment: {str(e)}")
+        segment_content, usage = None, None
+    return segment_content, usage
+
+def save_text_output(output_folder, filename, content_list):
+    """
+    Save processed text content to a file.
+
+    Args:
+        output_folder (str): Path to the output directory.
+        filename (str): Name of the original image file.
+        content_list (list): List of processed text content to save.
+    """
+    combined_content = knit_string_list(content_list)
+    output_file = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}.txt")
+    with open(output_file, 'w', encoding='utf-8') as f:
+        f.write(combined_content)
+
+def update_log(log_df, filename, processing_time, total_input_tokens, total_output_tokens, total_tokens, sub_images, status):
+    """
+    Update the processing log with new entry information.
+
+    Args:
+        log_df (pandas.DataFrame): Existing log DataFrame.
+        filename (str): Name of the processed file.
+        processing_time (float): Time taken to process the image.
+        total_input_tokens (int): Number of input tokens used.
+        total_output_tokens (int): Number of output tokens used.
+        total_tokens (int): Total number of tokens used.
+        sub_images (int): Number of image segments processed.
+        status (str): Processing status ('Success' or 'Failed').
+
+    Returns:
+        pandas.DataFrame: Updated log DataFrame.
+    """
+    log_entry = pd.DataFrame({
+        'file_name': [filename],
+        'processing_time': [processing_time],
+        'input_tokens': [total_input_tokens],
+        'output_tokens': [total_output_tokens],
+        'total_tokens': [total_tokens],
+        'sub_images': [sub_images],
+        'status': [status],
+        'timestamp': [datetime.now()]
+    })
+    return pd.concat([log_df[log_df['file_name'] != filename], log_entry], ignore_index=True)
+
+
+
+def process_jpeg_folder(folder_path, output_folder, prompt, max_ratio=1.5, overlap_fraction=0.1, deskew=True):
+    """
+    Process all JPEG images in a folder and generate text output.
+
+    Args:
+        folder_path (str): Path to the folder containing JPEG images.
+        output_folder (str): Path to store processed outputs and logs.
+        prompt (str): The prompt to use for image processing.
+        max_ratio (float, optional): Maximum aspect ratio for image segments. Defaults to 1.5.
+        overlap_fraction (float, optional): Fraction of overlap between segments. Defaults to 0.1.
+        deskew (bool, optional): Whether to apply deskewing to images. Defaults to True.
+
+    Returns:
+        pandas.DataFrame: Complete log of all processed files.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+    log_file_path, log_df = initialize_log_file(output_folder)
+
+    for filename in tqdm(os.listdir(folder_path)):
+        if filename.lower().endswith(('.jpg', '.jpeg')) and filename not in log_df[log_df['status'] == 'Success']['file_name'].values:
+            file_path = os.path.join(folder_path, filename)
+            start_time = time.time()
+
+            try:
+                img = load_image(file_path, deskew, output_folder)
+                segments = split_image(img, max_ratio, overlap_fraction)
+                content_list, total_input_tokens, total_output_tokens, total_tokens, sub_images = process_image_segments(segments, prompt)
+                save_text_output(output_folder, filename, content_list)
+                status = 'Success'
+            except Exception as e:
+                print(f"Processing failed for {filename}: {str(e)}")
+                total_input_tokens = total_output_tokens = total_tokens = sub_images = 0
+                status = 'Failed'
+            finally:
+                if 'img' in locals():
+                    img.close()
+
+            processing_time = time.time() - start_time
+            log_df = update_log(log_df, filename, processing_time, total_input_tokens, total_output_tokens, total_tokens, sub_images, status)
+            log_df.to_csv(log_file_path, index=False)
+
+    return log_df
+
+def compute_metric(row, metric, prediction_col, reference_col):
+    """
+    Computes evaluation metrics between prediction and reference texts in a dataframe row.
+
+    Args:
+        row (pandas.Series): A row from a DataFrame containing the texts to compare
+        metric (evaluate.EvaluationModule): The evaluation metric to compute (e.g., BLEU, ROUGE)
+        prediction_col (str): Name of the column containing the prediction text
+        reference_col (str): Name of the column containing the reference text
+
+    Returns:
+        dict or None: Dictionary containing computed metric scores, or None if computation fails
+
+    Raises:
+        KeyError: If specified columns are not found in the row
+        Exception: For other computation errors
+    """
+    try:
+        # Preprocess the text: lowercasing and replacing line breaks with spaces
+        prediction = re.sub(r'\s+', ' ', row[prediction_col].lower().strip())
+        #prediction = parser.render(prediction)
+        reference = re.sub(r'\s+', ' ', row[reference_col].lower().strip())
+
+        # Ensure the inputs to metric.compute are lists of strings
+        predictions = [prediction]
+        references = [reference]
+        return metric.compute(predictions=predictions, references=references)
+    except KeyError as e:
+       #print(f"KeyError: {e} in row: {row}")
+        return None
+    except Exception as e:
+        #print(f"Error: {e} in row: {row}")
+        return None
+
+def load_txt_files_to_dataframe(folder_path, text_column_name):
+    """
+    Loads all .txt files from a specified folder into a pandas DataFrame.
+
+    Args:
+        folder_path (str): Path to the folder containing .txt files
+        text_column_name (str): Name to be used for the column containing file contents
+
+    Returns:
+        pandas.DataFrame: DataFrame with columns:
+            - file_name (str): Name of the file without extension
+            - text_column_name (str): Contents of the text file
+
+    Note:
+        Files are read using UTF-8 encoding
+    """
+    #Get list of .txt files
+    txt_files = [f for f in os.listdir(folder_path) if f.endswith('.txt')]
+
+    # Initialize lists to store data
+    file_names = []
+    file_contents = []
+
+    # Read each file
+    for file in txt_files:
+        file_path = os.path.join(folder_path, file)
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Append data to lists
+        file_names.append(os.path.splitext(file)[0])  # Remove .txt extension
+        file_contents.append(content)
+
+    # Create DataFrame
+    df = pd.DataFrame({
+        'file_name': file_names,
+        text_column_name: file_contents
+    })
+
+    return df
+
+def load_and_join_texts_as_dataframe(folder_list):
+    """
+    Loads text files from multiple folders and joins them into a single DataFrame.
+
+    Args:
+        folder_list (list): List of folder paths containing text files to process
+
+    Returns:
+        pandas.DataFrame: Combined DataFrame where:
+            - Each folder's contents are in a separate column named after the folder
+            - Files are matched across folders using their names
+            - The 'file_name' column serves as the joining key
+            - Text contents are processed using parser.render()
+
+    Note:
+        Performs left joins, keeping all files from the first folder in the list
+    """
+    result_df = None
+
+    for folder_path in folder_list:
+        # Extract the folder name from the path
+        folder_name = os.path.basename(folder_path)
+
+        # Load the text files from this folder
+        df = load_txt_files_to_dataframe(folder_path, folder_name)
+        df[folder_name] = df[folder_name].apply(lambda x: parser.render(x))
+        # Rename the 'content' column to the folder name
+        #df = df.rename(columns={'content': folder_name})
+
+        if result_df is None:
+            result_df = df
+        else:
+            # Perform a left join with the existing result
+            result_df = result_df.merge(df, on='file_name', how='left')
+
+    return result_df

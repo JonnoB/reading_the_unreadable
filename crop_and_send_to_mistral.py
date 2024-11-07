@@ -1,7 +1,19 @@
 import marimo
 
-__generated_with = "0.9.1"
+__generated_with = "0.8.22"
 app = marimo.App(width="medium")
+
+
+@app.cell
+def __(mo):
+    mo.md(
+        r"""
+        # Introduction
+
+        Early test code. Can probably be deleted 05-11-24
+        """
+    )
+    return
 
 
 @app.cell

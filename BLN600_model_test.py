@@ -5,6 +5,18 @@ app = marimo.App(width="medium")
 
 
 @app.cell
+def __(mo):
+    mo.md(
+        r"""
+        # Introduction
+
+        This is early work identifying issues in the code that have now been fixed. I don't think this code serves any further purpose and can probably be deleted 05-11-24
+        """
+    )
+    return
+
+
+@app.cell
 def __():
     import marimo as mo
     import pandas as pd

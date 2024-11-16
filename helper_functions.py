@@ -177,8 +177,6 @@ def split_tall_box(page, x0, y0, x1, y1, max_height, overlap):
 def process_bounding_box(page, key, coords, original_size, page_size):
 
     """
-    This function should be deleted when all useful code is extracted
-
     Process a bounding box on a page, scaling coordinates and handling tall boxes.
 
     This function takes a bounding box, scales its coordinates to match the current page size,
@@ -563,7 +561,7 @@ def save_article_text(article_id, full_string, save_folder, dataset_df):
 
 
 
-def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=300, image_format='PNG'):
+def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=300, image_format='JPEG', use_greyscale=True, quality=85):
     """
     Converts each page of a PDF file into an image and saves the images to an output folder.
 
@@ -577,6 +575,8 @@ def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=300, image
         Resolution for the converted images, in dots per inch. Higher values increase image quality.
     image_format : str, optional
         Image format for the output files. Supported formats are 'PNG' and 'JPEG'. Defaults to 'PNG'.
+    use_greyscale:
+        Whether to save as a 1 channel greyscale image, this reduces file size by about 66%. Default is True
 
     Raises
     ------
@@ -592,25 +592,34 @@ def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=300, image
     --------
     >>> convert_pdf_to_image('example.pdf', output_folder='images', dpi=200, image_format='JPEG')
     """
-    # Ensure the output folder exists
     os.makedirs(output_folder, exist_ok=True)
-
-    # Get the original file name without extension
     original_filename = os.path.splitext(os.path.basename(pdf_path))[0]
-
-    # Convert PDF to images
     images = convert_from_path(pdf_path, dpi=dpi)
 
-    # Determine file extension based on format
     format_map = {'PNG': 'png', 'JPEG': 'jpg'}
     file_extension = format_map.get(image_format.upper())
     if not file_extension:
         raise ValueError("Unsupported format. Use 'PNG' or 'JPEG'.")
 
-    # Save each page as an image file
     for i, image in enumerate(images):
         output_file = os.path.join(output_folder, f'{original_filename}_page_{i + 1}.{file_extension}')
-        image.save(output_file, image_format.upper())
+        
+        if use_greyscale:
+            # Convert to grayscale
+            image = image.convert('L')
+            
+            # For black and white text documents, you can often binarize the image
+            # This converts the image to pure black and white
+            threshold = 200  # Adjust this value based on your images
+            image = image.point(lambda x: 0 if x < threshold else 255, '1')
+
+            
+        if image_format.upper() == 'JPEG':
+            # For JPEG, we can use quality parameter
+            image.save(output_file, image_format.upper(), quality=quality, optimize=True)
+        else:
+            # For PNG, use optimize
+            image.save(output_file, image_format.upper(), optimize=True, compression = 9)
 
 
 def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=10):
@@ -892,9 +901,15 @@ def compute_metric(row, metric, prediction_col, reference_col):
         #print(f"Error: {e} in row: {row}")
         return None
 
+##
+## These are for testing the results however they clash with previous
+##
 def load_txt_files_to_dataframe(folder_path, text_column_name):
     """
     Loads all .txt files from a specified folder into a pandas DataFrame.
+    This is an internal function used by `load_and_join_texts_as_dataframe` which is used in
+    calculating the cer for various models, and `files_to_df_func`, which is used as part of 
+    the general organising of data... they could possibly be merged at some point.
 
     Args:
         folder_path (str): Path to the folder containing .txt files
@@ -969,3 +984,45 @@ def load_and_join_texts_as_dataframe(folder_list):
             result_df = result_df.merge(df, on='file_name', how='left')
 
     return result_df
+
+def files_to_df_func(folder_path, text_column_name = 'content'):
+
+    """
+    Convert text files from a folder into a structured pandas DataFrame.
+
+    Parameters:
+        folder_path (str): Path to the directory containing text files
+        text_column_name (str, optional): Name of the column that will store file contents. 
+            Defaults to 'content'.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the following columns:
+            - file_name: Original filename
+            - content: Text content of the file
+            - artid: Article identifier extracted from filename
+            - periodical: Publication name extracted from filename
+            - page_number: Page number extracted from filename (as integer)
+            - issue: Issue number extracted from filename
+
+    Notes:
+        - Expects files to follow a specific naming convention with elements separated by underscores
+        - File names should include article ID, periodical name, issue number, and page number
+        - Example filename format: "prefix_artid_something_periodical_issue_X_page_Y.txt"
+
+    Example:
+        >>> df = files_to_df_func("path/to/files")
+        >>> print(df.columns)
+        ['file_name', 'content', 'artid', 'periodical', 'page_number', 'issue']
+    """
+
+    # Create a DataFrame from the data list
+    df =  load_txt_files_to_dataframe(folder_path, text_column_name)
+
+    split_df = df['file_name'].str.split("_")
+
+    df['artid'] = split_df.apply(lambda x: x[1])
+    df['periodical'] = split_df.apply(lambda x: x[3])
+    df['page_number'] = split_df.apply(lambda x: x[-1]).str.replace(".txt", "").astype(int)
+    df['issue'] = df['file_name'].str.extract(r'issue_(.*?)_page', expand=False)
+
+    return df

@@ -172,13 +172,12 @@ def __():
 
     metric_cer = evaluate.load("cer")
     metric_wer = evaluate.load("wer")
-
     return evaluate, metric_cer, metric_wer
 
 
 @app.cell
 def __(BLN_folder, data_folder, load_and_join_texts_as_dataframe, os):
-    _list_of_folders = [os.path.join(BLN_folder, folder) for folder in ['BLN600_deskew', 'BLN600_deskew_ratio_15', 'BLN600_ratio_1000', 'BLN600_ratio_15', 'BLN600_ratio_10', 'BLN600_deskew_ratio_10', 'american_stories_txt','BLN600_GOT' 
+    _list_of_folders = [os.path.join(BLN_folder, folder) for folder in ['BLN600_deskew', 'BLN600_deskew_ratio_15', 'BLN600_ratio_1000', 'BLN600_ratio_15', 'BLN600_ratio_10', 'BLN600_deskew_ratio_10', 'american_stories_txt','BLN600_GOT', 'docling'
                                                                        ]]
 
 
@@ -210,32 +209,36 @@ def __(compute_metric, df, metric_cer, metric_wer):
     df['am_stories'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='american_stories_txt', reference_col='Ground Truth')
 
     df['GOT'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='BLN600_GOT', reference_col='Ground Truth')
+
+    df['docling'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='docling', reference_col='Ground Truth')
     return
 
 
 @app.cell
 def __(df):
-    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_deskew_15','cer_nodeskew_1000','cer_nodeskew_15', 'cer_deskew_10', 
-        'cer_nodeskew_10', 'am_stories', 'GOT'
+    df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_nodeskew_1000','cer_nodeskew_10', 
+        'cer_deskew_10', 'am_stories', 'GOT', 'docling'
        ]].describe()
     return
 
 
 @app.cell
 def __(df, np, pd, plt, sns):
-    _plot_df = df[['file_name',#'cer_ocr', 'cer_deskew_1000', 'cer_nodeskew_1000', 
-                   'cer_deskew_15','cer_deskew_10', 'cer_nodeskew_15', 'cer_nodeskew_10']].melt(id_vars = 'file_name')
+    _plot_df = df[['file_name',#'cer_ocr', 
+                   'cer_deskew_1000', 'cer_nodeskew_1000', 
+                   'cer_deskew_10', 'cer_nodeskew_10'#,'cer_nodeskew_15', 'cer_deskew_15',
+                  ]].melt(id_vars = 'file_name')
 
     _plot_df['deskew'] = np.where(_plot_df['variable'].str.contains('no'),'no deskew', 'deskew' ) 
 
     mapping = {
         'cer_ocr': 'ocr',
-        'cer_deskew_1000': 'none',
+        'cer_deskew_1000': 'Whole image',
         'cer_deskew_15': '1.5',
-        'cer_deskew_10': '1.0',
-        'cer_nodeskew_1000': 'none',
+        'cer_deskew_10': 'Square Crop',
+        'cer_nodeskew_1000': 'Whole image',
         'cer_nodeskew_15': '1.5',
-        'cer_nodeskew_10': '1.0',
+        'cer_nodeskew_10': 'Square Crop',
     }
 
 
@@ -272,8 +275,8 @@ def __(df, np, pd, plt, sns):
                 y='bootstrapped_value', 
                 hue='deskew')
 
-    plt.title('Distribution of Bootstrapped Means by Category')
-    plt.xlabel('Category')
+    plt.title('Analysing the impact of deskewing and cropping images')
+    plt.xlabel('Image Crop')
     plt.ylabel('Bootstrapped Mean Value')
     plt.show()
     return (

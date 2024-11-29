@@ -83,14 +83,16 @@ def create_page_dict(df):
 
     return page_dict
 
-def scale_bbox(bbox, original_size, new_size):
+def scale_bbox(bbox, original_size, new_size, return_dict=False):
     '''
     Scale the bounding box from the original image size to the new image size.
 
-    :param bbox: List of [x1, y1, x2, y2] coordinates of the bounding box
+    :param bbox: List of [x1, x2, y1, y2] coordinates of the bounding box
     :param original_size: Tuple of (width, height) of the original image
     :param new_size: Tuple of (width, height) of the new image
-    :return: Scaled bounding box coordinates
+    :param return_dict: Boolean to determine return type (list or dictionary)
+    :return: Scaled bounding box coordinates as either list [x1, x2, y1, y2] or 
+            dictionary {'x0': x0, 'x1': x1, 'y0': y0, 'y1': y1}
     '''
     original_width, original_height = original_size
     new_width, new_height = new_size
@@ -100,13 +102,21 @@ def scale_bbox(bbox, original_size, new_size):
     height_scale = new_height / original_height
 
     # Scale the bounding box coordinates
-    x1, y1, x2, y2 = bbox
+    x1, x2, y1, y2 = bbox
     new_x1 = int(x1 * width_scale)
     new_y1 = int(y1 * height_scale)
     new_x2 = int(x2 * width_scale)
     new_y2 = int(y2 * height_scale)
 
-    return [new_x1, new_y1, new_x2, new_y2]
+    if return_dict:
+        return {
+            'x0': new_x1,
+            'x1': new_x2,
+            'y0': new_y1,
+            'y1': new_y2
+        }
+    return [new_x1, new_x2, new_y1, new_y2]
+
 
 
 def crop_and_encode_image(page, x0, y0, x1, y1):
@@ -177,6 +187,7 @@ def split_tall_box(page, x0, y0, x1, y1, max_height, overlap):
 def process_bounding_box(page, key, coords, original_size, page_size):
 
     """
+
     Process a bounding box on a page, scaling coordinates and handling tall boxes.
 
     This function takes a bounding box, scales its coordinates to match the current page size,
@@ -201,7 +212,7 @@ def process_bounding_box(page, key, coords, original_size, page_size):
         - split_tall_box: for splitting tall boxes into smaller parts
         - crop_and_encode_image: for cropping and encoding the image
     """
-    x0, y0, x1, y1 = scale_bbox([coords["x0"], coords["y0"], coords["x1"], coords["y1"]],
+    x0, y0, x1, y1 = scale_bbox([coords["x0"], coords["x1"], coords["y0"], coords["y1"]],
                                 original_size, page_size)
     
     # Ensure the coordinates are within the image bounds
@@ -705,6 +716,8 @@ def initialize_log_file(output_folder):
 def load_image(file_path, deskew, output_folder):
     """
     Load and optionally deskew an image file.
+    This function was originally created to handle images that were a 
+    single image only.
 
     Args:
         file_path (str): Path to the image file to be loaded.
@@ -716,6 +729,9 @@ def load_image(file_path, deskew, output_folder):
     """
     if deskew:
         with wand.image.Image(filename=file_path) as wand_img:
+
+            #The save and load is annoying but necessary as it isn't possible to convert between wand and PIL
+            #Maybe can be re-done using the deskew library?
             wand_img.deskew(0.4 * wand_img.quantum_range)
             temp_path = os.path.join(output_folder, f"temp_deskewed_{os.path.basename(file_path)}")
             wand_img.save(filename=temp_path)
@@ -826,7 +842,8 @@ def update_log(log_df, filename, processing_time, total_input_tokens, total_outp
 
 def process_jpeg_folder(folder_path, output_folder, prompt, max_ratio=1.5, overlap_fraction=0.1, deskew=True):
     """
-    Process all JPEG images in a folder and generate text output.
+    Process all JPEG images in a folder and generate text output. Assumes that the articles have already 
+    been clipped. Sends each image to the server one at a time.
 
     Args:
         folder_path (str): Path to the folder containing JPEG images.

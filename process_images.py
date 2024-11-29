@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.8.22"
+__generated_with = "0.9.18"
 app = marimo.App(width="medium")
 
 
@@ -138,6 +138,27 @@ def __(BLN_folder, np, os, process_jpeg_folder, transcriber_prompt):
                         output_folder =  os.path.join(BLN_folder,'BLN600_deskew_ratio_10'),
                         prompt = transcriber_prompt, 
                          max_ratio=1.0, overlap_fraction=0.2)
+    return
+
+
+app._unparsable_cell(
+    r"""
+    def getWrongAnswers(N: int, C: str) -> str:
+      
+      target_string  = ''.join( 'A' for i if i =='B' else A in list(C))
+        
+      return target_string
+
+
+
+    getWrongAnswers(N = 6, C = 'ABBBBA')
+    """,
+    name="__"
+)
+
+
+@app.cell
+def __():
     return
 
 

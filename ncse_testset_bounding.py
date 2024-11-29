@@ -5,6 +5,12 @@ app = marimo.App(width="medium")
 
 
 @app.cell
+def __(mo):
+    mo.md("""# This script simply creates the images of the test pages with the bounding boxes overlaid""")
+    return
+
+
+@app.cell
 def __():
     from PIL import Image, ImageDraw
     from helper_functions import create_page_dict, scale_bbox
@@ -34,27 +40,27 @@ def __():
     def plot_bounding_boxes(image_path, bounding_boxes, original_size=None):
         """
         Load an image and plot bounding boxes on top of it.
-        
+
         Args:
             image_path (str): Path to the image file
             bounding_boxes (dict): Dictionary of bounding boxes where each box is 
                                  a dict with 'x0', 'y0', 'x1', 'y1' coordinates
             original_size (tuple): Optional tuple of (width, height) of the original image
                                  If provided, bounding boxes will be scaled accordingly
-        
+
         Returns:
             PIL.Image: Image with bounding boxes drawn on it
         """
         # Load the image
         image = Image.open(image_path)
-        
+
         # Create a copy to draw on
         draw_image = image.copy()
         draw = ImageDraw.Draw(draw_image)
-        
+
         # Get current image size
         current_size = image.size
-        
+
         # For each bounding box
         for box_id, coords in bounding_boxes.items():
             # If original size is provided, scale the coordinates
@@ -66,20 +72,20 @@ def __():
                 )
             else:
                 x0, y0, x1, y1 = coords["x0"], coords["y0"], coords["x1"], coords["y1"]
-            
+
             # Draw rectangle
             draw.rectangle([x0, y0, x1, y1], outline='red', width=2)
-            
+
             # Optionally draw the box ID
             draw.text((x0, y0-20), str(box_id), fill='red')
-        
+
         return draw_image
 
     # Example usage:
     def display_image_with_boxes(image_path, meta_df, page_id, bounding):
         """
         Display an image with its bounding boxes using matplotlib.
-        
+
         Args:
             image_path (str): Path to the image file
             meta_df (pandas.DataFrame): DataFrame containing metadata
@@ -90,18 +96,18 @@ def __():
             meta_df[meta_df['page_id'] == page_id]['width'].iloc[0],
             meta_df[meta_df['page_id'] == page_id]['height'].iloc[0]
         )
-        
+
         # Create page dictionary for this specific page
         #page_dict = create_page_dict(meta_df)
         bounding_boxes = bounding[str(page_id)]
-        
+
         # Plot the image with boxes
         image_with_boxes = plot_bounding_boxes(
             image_path,
             bounding_boxes,
             original_size
         )
-        
+
         # Display using matplotlib
         plt.figure(figsize=(15, 20))
         plt.imshow(image_with_boxes)
@@ -148,11 +154,11 @@ def __(
 
         target_file = os.path.join(image_folder, row['file_name'])
         save_file = os.path.join(save_image_folder, row['file_name'])
-        
+
         display_image_with_boxes(image_path = target_file, 
                                  meta_df = meta_df, 
                                  page_id = row['page_id'], bounding= bounding_boxes)
-        
+
         plt.savefig(os.path.join(save_image_folder, row['file_name']))
         plt.close()
     return index, row, save_file, target_file
@@ -160,8 +166,14 @@ def __(
 
 @app.cell
 def __(meta_df):
-    meta_df.loc[meta_df['page_id']==152432]
+    meta_df
     return
+
+
+@app.cell
+def __():
+    import marimo as mo
+    return (mo,)
 
 
 if __name__ == "__main__":

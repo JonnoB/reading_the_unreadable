@@ -1,3 +1,9 @@
+########
+##
+## This script is used to convert the PDF's in the test set to PNG images at 200 dpi
+##
+######0
+
 from helper_functions import convert_pdf_to_image
 import os
 from tqdm import tqdm

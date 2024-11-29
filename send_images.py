@@ -1,3 +1,10 @@
+#########
+##
+## Send images to pixtral starting from a full page then cropping the images down.
+##
+##
+#########
+
 
 print('loading packages')
 

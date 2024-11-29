@@ -247,8 +247,8 @@ def __(json):
 
 
 @app.cell
-def __(bounding_boxes, filter_json_dict_by_column, new_file_names):
-    test_bounding_boxes = filter_json_dict_by_column(bounding_boxes, new_file_names, 'page_id')
+def __(bounding_boxes, filter_json_dict_by_column, test_file_meta_data):
+    test_bounding_boxes = filter_json_dict_by_column(bounding_boxes, test_file_meta_data, 'page_id')
     return (test_bounding_boxes,)
 
 
@@ -256,6 +256,12 @@ def __(bounding_boxes, filter_json_dict_by_column, new_file_names):
 def __(json, test_bounding_boxes):
     with open('data/test_ncse_bounding_boxes.json', 'w') as _file:
         json.dump(test_bounding_boxes, _file, indent = 4)
+    return
+
+
+@app.cell
+def __(test_file_meta_data):
+    test_file_meta_data
     return
 
 

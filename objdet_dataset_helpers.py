@@ -45,34 +45,47 @@ def to_coco_format(bbox):
     height = y2 - y1
     return [x1, y1, width, height]
 
+
 def create_annotation_list(bbox_df, image_list):
-    """Create list of annotation dictionaries"""
-
-    dimensions_dict = {item['id']: (item['width'], item['height'])for item in image_list}
-
+    """Create list of annotation dictionaries
+    
+    :param bbox_df: DataFrame containing bounding box information
+    :param image_list: List of dictionaries containing image information with 'id', 'width', and 'height'
+    :return: List of annotation dictionaries in COCO format
+    """
+    dimensions_dict = {item['id']: (item['width'], item['height']) for item in image_list}
+    
     temp_list = []
-
+    
     for idx, row in bbox_df.iterrows():
         try:
-            #scale bounding boxes to current image size using reference from original scan
-            bounding_box_new = scale_bbox(row['bounding_box_list'], 
-                                        original_size=(row['width'], row['height']), 
-                                        new_size=dimensions_dict[row['page_id']])
-            bounding_box_new = to_coco_format(bounding_box_new)
-
+            # Scale bounding boxes
+            scaled_bbox = scale_bbox(
+                row[['x0', 'x1', 'y0', 'y1']].to_frame().T,  # Convert row to single-row DataFrame
+                original_size=(row['width'], row['height']),
+                new_size=dimensions_dict[row['page_id']]
+            )
+            
+            bbox_new = [
+                scaled_bbox['scaled_x0'].iloc[0],
+                scaled_bbox['scaled_y0'].iloc[0],
+                scaled_bbox['scaled_x1'].iloc[0],
+                scaled_bbox['scaled_y1'].iloc[0]
+            ]
+            
             temp_list.append({
                 "id": row['id'],
                 "image_id": row['page_id'],
                 "category_id": row['article_type_id'],
-                "bbox": bounding_box_new,
-                "area": bounding_box_new[2] * bounding_box_new[3],
+                "bbox": bbox_new,
+                "area": (bbox_new[2] - bbox_new[0]) * (bbox_new[3] - bbox_new[1]),
                 "iscrowd": 0
             })
-
+            
         except Exception as e:
             print(f"Error processing row {idx}: {str(e)}")
             continue
-
+    
     return temp_list
 
 def turn_into_coco(meta_data_df, page_df, local_image_dir, coco_image_dir = ''):
@@ -188,20 +201,20 @@ def create_cross_validation_coco(meta_data_df, page_df, local_image_dir, output_
 ## YOLO VERSION
 ##
 
-def convert_bbox_to_yolo(bbox, img_width, img_height):
+def convert_bbox_to_yolo(row, img_width, img_height, x0 = 'scaled_x0', x1 = 'scaled_x1', y0 = 'scaled_y0', y1 = 'scaled_y1'):
     """
-    Convert [x1, x2, y1, y2] format directly to YOLO format [x_center, y_center, width, height]
+    Convert [x0, x1, y0, y1] format directly to YOLO format [x_center, y_center, width, height]
     All values in YOLO format are normalized to [0, 1]
     """
-    x1, x2, y1, y2 = bbox
+    x0, x1, y0, y1 = float(row[x0]), float(row[x1]), float(row[y0]), float(row[y1])
     
     # Calculate width and height
-    width = x2 - x1
-    height = y2 - y1
+    width = x1 - x0
+    height = y1 - y0
     
     # Calculate center coordinates
-    x_center = x1 + width/2
-    y_center = y1 + height/2
+    x_center = x0 + width / 2
+    y_center = y0 + height / 2
     
     # Normalize
     x_center = x_center / img_width
@@ -211,13 +224,29 @@ def convert_bbox_to_yolo(bbox, img_width, img_height):
     
     return [x_center, y_center, width, height]
 
-def create_yolo_annotation(image_path, annotations, img_width, img_height):
-    """Create YOLO format annotation file content"""
+def create_yolo_annotation(annotations_df, img_width, img_height):
+    """
+    Create YOLO format annotation file content from a DataFrame.
+    
+    Args:
+        image_path (str): Path to the image (not used here but can be logged or stored).
+        annotations_df (pd.DataFrame): DataFrame with columns 'article_type_id', 'x0', 'x1', 'y0', 'y1'.
+        img_width (int): Width of the image.
+        img_height (int): Height of the image.
+        
+    Returns:
+        str: YOLO format annotation file content.
+    """
     yolo_annotations = []
     
-    for ann in annotations:
-        category_id = ann['article_type_id'] - 1  # YOLO uses 0-based indexing
-        bbox = convert_bbox_to_yolo(ann['bounding_box_list'], img_width, img_height)
+    for _, row in annotations_df.iterrows():
+        # Subtract 1 from article_type_id to get YOLO category ID (0-based indexing)
+        category_id = row['article_type_id'] - 1
+        
+        # Convert bounding box to YOLO format
+        bbox = convert_bbox_to_yolo(row, img_width, img_height)
+        
+        # Format as YOLO annotation
         yolo_annotations.append(f"{category_id} {' '.join([str(x) for x in bbox])}")
     
     return '\n'.join(yolo_annotations)
@@ -273,7 +302,7 @@ def create_cross_validation_yolo(meta_data_df, page_df, local_image_dir, output_
                 img_annotations = meta_data_df[meta_data_df['page_id'] == row['page_id']].to_dict('records')
                 
                 # Convert annotations to YOLO format
-                yolo_content = create_yolo_annotation(img_path, img_annotations, width, height)
+                yolo_content = create_yolo_annotation(img_annotations, width, height)
                 
                 # Create paths for new image and label files
                 new_img_path = os.path.join(fold_dir, 'images', split, row['filename'])
@@ -404,3 +433,4 @@ def plot_coco_box(image_path, annotation_path):
     
     plt.axis('off')
     plt.show()
+

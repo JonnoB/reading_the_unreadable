@@ -53,15 +53,33 @@ def __(dimensions_dict, pd, scale_bbox):
 
     meta_data_df.sort_values('image_name', inplace=True)
 
-    meta_data_df['bounding_box_adjusted'] = meta_data_df.apply(lambda row: scale_bbox(row['bounding_box_list'], 
-                                            original_size=(row['width'], row['height']), 
-                                            new_size=(row['width_adjusted'], row['height_adjusted']), return_dict=True), axis = 1)
-    return (meta_data_df,)
+    _grouped = meta_data_df.groupby(['width', 'height', 'width_adjusted', 'height_adjusted'])
+
+    # Process each group and concatenate results
+    scaled_dfs = []
+    for (orig_w, orig_h, new_w, new_h), group in _grouped:
+        scaled_df = scale_bbox(group, 
+                              original_size=(orig_w, orig_h),
+                              new_size=(new_w, new_h))
+        scaled_dfs.append(scaled_df)
+
+    meta_data_df = pd.concat(scaled_dfs)
+
+    return (
+        group,
+        meta_data_df,
+        new_h,
+        new_w,
+        orig_h,
+        orig_w,
+        scaled_df,
+        scaled_dfs,
+    )
 
 
 @app.cell
 def __(meta_data_df):
-    meta_data_df.groupby(['article_type_id', 'publication_id']).size()
+    meta_data_df#.groupby(['article_type_id', 'publication_id']).size()
     return
 
 
@@ -147,36 +165,6 @@ def __(format_dataframe_predictions, xval_label_data):
 
 @app.cell
 def __(np):
-    def create_label_set(df, bbox_col='bbox', label_col='label', image_col='image_name'):
-        """
-        Faster version using numpy operations with type handling
-        """
-        # Convert to numpy array first - much faster than iterating
-        bboxes = np.stack(df[bbox_col].values)
-        labels = df[label_col].values
-        # Ensure images are strings
-        images = df[image_col].astype(str).values
-
-        result = []
-
-        # Use numpy's unique with return_index for faster grouping
-        unique_images, indices = np.unique(images, return_index=True)
-        # Add the length of array as the last index for slicing
-        indices = np.append(indices, len(images))
-
-        # Create slices for each image
-        for i in range(len(unique_images)):
-            start, end = indices[i], indices[i + 1]
-
-            img_dict = {
-                'bboxes': bboxes[start:end],
-                'labels': labels[start:end],
-                'image_name': unique_images[i]
-            }
-
-            result.append(img_dict)
-
-        return result
 
     def create_label_set(df, bbox_col='bbox', label_col='label', image_col='image_name'):
         """
@@ -204,7 +192,46 @@ def __(np):
             ], dtype=np.float32)  # Explicitly set dtype to float32
 
             # Extract labels and ensure they're integers
-            labels = group[label_col].astype(int).to_numpy()
+            labels = group[label_col].astype(int).to_numpy() -1 # Yolo is zero indexed
+
+            # Create dictionary for this image
+            image_dict = {
+                'bboxes': bboxes,
+                'labels': labels,
+                'image_name': str(image_name)  # Ensure image_name is string
+            }
+
+            result.append(image_dict)
+
+        return result
+
+    def create_label_set(df, label_col='label', image_col='image_name'):
+        """
+        Convert DataFrame to list of dictionaries with bboxes, labels, and image names.
+
+        Parameters:
+        df (pandas.DataFrame): Input DataFrame with scaled_x0, scaled_x1, scaled_y0, scaled_y1 columns
+        label_col (str): Name of column containing labels
+        image_col (str): Name of column containing image names
+
+        Returns:
+        list: List of dictionaries with 'bboxes', 'labels', and 'image_name' keys
+        """
+        grouped = df.groupby(image_col)
+
+        result = []
+
+        # Process each group (image)
+        for image_name, group in grouped:
+            # Extract bboxes using the scaled columns
+            bboxes = np.array([
+                [float(row['scaled_x0']), float(row['scaled_y0']), 
+                 float(row['scaled_x1']), float(row['scaled_y1'])] 
+                for _, row in group.iterrows()
+            ], dtype=np.float32)  # Explicitly set dtype to float32
+
+            # Extract labels and ensure they're integers
+            labels = group[label_col].astype(int).to_numpy() - 1  # Yolo is zero indexed
 
             # Create dictionary for this image
             image_dict = {
@@ -221,7 +248,7 @@ def __(np):
 
 @app.cell
 def __(create_label_set, meta_data_df):
-    labels = create_label_set(meta_data_df, bbox_col='bounding_box_adjusted', label_col='article_type_id', image_col='image_name')
+    labels = create_label_set(meta_data_df, label_col='article_type_id', image_col='image_name')
     return (labels,)
 
 
@@ -255,8 +282,8 @@ def __(test2):
 
 
 @app.cell
-def __(image_folder, labels, os, predictions, test2, visualize):
-    target_image = 'EWJ-1863-02-02_page_42.png'
+def __(image_folder, labels, os, test2, visualize):
+    target_image = 'EWJ-1864-05-02_page_14.png'
 
 
     image_id = test2.loc[test2['image_name']== target_image].index[0]
@@ -264,7 +291,7 @@ def __(image_folder, labels, os, predictions, test2, visualize):
 
     visualize(image = os.path.join(image_folder, test2.loc[image_id, 'image_name']), 
                            label= labels[image_id],
-                          prediction = predictions[image_id]
+                     #     prediction = predictions[image_id]
              )
     return image_id, target_image
 

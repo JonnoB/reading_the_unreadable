@@ -139,6 +139,12 @@ def __():
 
 
 @app.cell
+def __(meta_df):
+    meta_df
+    return
+
+
+@app.cell
 def __(
     bounding_boxes,
     display_image_with_boxes,

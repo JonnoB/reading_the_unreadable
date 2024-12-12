@@ -7,7 +7,7 @@ app = marimo.App(width="medium")
 @app.cell
 def __():
     import os 
-    from helper_functions import files_to_df_func, scale_bbox
+    from helper_functions import files_to_df_func, scale_bbox, calculate_box_overlaps, check_bboxes_valid, calculate_coverage_for_df
     import pandas as pd
     from tqdm import tqdm
     import shutil
@@ -15,10 +15,10 @@ def __():
     import json
     from PIL import Image
     from sklearn.model_selection import KFold
-
+    import seaborn as sns
     import shutil
     import yaml
-
+    import numpy as np
 
     data_folder = 'data'
     #The folder where the pdfs have been converted to PNGs of various dpi.
@@ -35,19 +35,30 @@ def __():
 
     periodical_folders = ['English_Womans_Journal_issue_PDF_files', 'Leader_issue_PDF_files', 'Monthly_Repository_issue_PDF_files',
                          'Northern_Star_issue_PDF_files', 'Publishers_Circular_issue_PDF_files', 'Tomahawk_issue_PDF_files']
+
+    #one of these is missing! need to check which one
+    ground_truth_page_id = [ 97484, 108039, 111597, 124384,  93238,  91046,  90939,  91483,  92066,  92372,
+      92551, 164855, 124476, 110454, 120252, 122756, 123314, 123497, 128022,  79515,
+     163094, 138047, 140098, 146451, 150954, 160259, 152432, 155298, 160323, 160759, 160813]
     return (
         Image,
         KFold,
+        calculate_box_overlaps,
+        calculate_coverage_for_df,
+        check_bboxes_valid,
         convert_from_path,
         converted_folder,
         data_folder,
         files_to_df_func,
+        ground_truth_page_id,
         json,
+        np,
         os,
         pd,
         periodical_folders,
         scale_bbox,
         shutil,
+        sns,
         test_jpg_path,
         test_pdf_path,
         test_pdf_path_correct_names,
@@ -64,7 +75,28 @@ def __(mo):
 
 
 @app.cell
-def __(ast, data_folder, os, pd, tqdm):
+def __(data_folder, os, pd):
+    periodical_df = pd.read_parquet(os.path.join(data_folder,'periodicals_publication.parquet'))
+    return (periodical_df,)
+
+
+@app.cell
+def __(periodical_df):
+    periodical_df
+    return
+
+
+@app.cell
+def __(
+    ast,
+    calculate_box_overlaps,
+    check_bboxes_valid,
+    data_folder,
+    os,
+    pd,
+    periodical_df,
+    tqdm,
+):
     _file_name = os.path.join(data_folder, 'ncse_data_metafile.parquet')
 
     # We need to add the page width and height to be able to scale to bounding boxes properly
@@ -76,7 +108,7 @@ def __(ast, data_folder, os, pd, tqdm):
 
 
     if not os.path.isfile(_file_name):
-        test_file_meta_data = []
+        _df = []
         file_folder ='new_parquet' #'ncse_text_chunks' # 'new_parquet'
         for file in tqdm(os.listdir(os.path.join(data_folder, file_folder))):
 
@@ -86,51 +118,56 @@ def __(ast, data_folder, os, pd, tqdm):
                                  'issue_date', 'page_number', 'bounding_box']]
 
             #temp.drop(columns='content_html', inplace=True)
-            test_file_meta_data.append(_temp)
+            _df.append(_temp)
             #delete as I feel there is some memory leak going on
             del _temp
 
-        test_file_meta_data  = pd.concat(test_file_meta_data, ignore_index=True)
+        _df  = pd.concat(_df, ignore_index=True)
 
-        test_file_meta_data['issue_date'] = test_file_meta_data['issue_date'].astype(str)
+        _df['issue_date'] = _df['issue_date'].astype(str)
 
-        test_file_meta_data = test_file_meta_data.merge(_page_data[['id', 'height', 'width']].set_index('id'), 
+        _df = _df.merge(_page_data[['id', 'height', 'width']].set_index('id'), 
                                                         left_on = 'page_id', right_index= True)
 
         #add in the periodical id so that the file names can be re-constructed
-        test_file_meta_data = test_file_meta_data.merge(issue_data[['id', 'periodical_abbrev', 'publication_id']].set_index('id'),
+        _df = _df.merge(issue_data[['id', 'periodical_abbrev', 'publication_id']].set_index('id'),
                                                        left_on = 'issue_id', right_index= True)
+        _df = _df.merge(periodical_df[['id', 'abbreviation']].set_index('id'), left_on='publication_id', right_index=True)
 
-        #test_file_meta_data['bounding_box'] = test_file_meta_data.apply(lambda row: eval(row['bounding_box']) if isinstance(row['bounding_box'], str) else row['bounding_box'], axis = 1)
-        test_file_meta_data['bounding_box'] = test_file_meta_data.apply(
+        _df['bounding_box'] = _df.apply(
             lambda row: ast.literal_eval(row['bounding_box']) 
             if isinstance(row['bounding_box'], str) 
             else row['bounding_box'], 
             axis=1
         )
 
-        # Then convert dict values to int and create list
-        test_file_meta_data['bounding_box_list'] = test_file_meta_data['bounding_box'].apply(
-            lambda x: [int(v) for v in x.values()]
-        )
+        bbox_df = pd.json_normalize(_df['bounding_box'])
+        _df = pd.concat([_df, bbox_df], axis=1)
+
+        _df['x0'] = _df['x0'].astype(int)
+        _df['x1'] = _df['x1'].astype(int)
+        _df['y0'] = _df['y0'].astype(int)
+        _df['y1'] = _df['y1'].astype(int)
 
         # Area = (x1 - x0) * (y1 - y0)
-        test_file_meta_data['area'] = test_file_meta_data['bounding_box_list'].apply(lambda x: (x[1] - x[0]) * (x[3] - x[2]))
+        _df['page_area'] = _df['height'] * _df['width']
+        _df['bounding_box_area'] = (_df['x1'] -_df['x0']) * (_df['y1'] -_df['y0']) 
+        _df['page_fract'] = _df['bounding_box_area'] / _df['page_area'] # This is useful for checking nothing stupid happening
+        #... because lots of stupid is happening
 
-        test_file_meta_data.to_parquet(_file_name)
+        _df['valid_bbox'] = check_bboxes_valid(_df, 'width', 'height')
+        _df['overlap_fract'] = calculate_box_overlaps(_df, image_id_column='page_id')
+
+        _df.to_parquet(_file_name)
+        bbox_data_df = _df
     else:
-        test_file_meta_data = pd.read_parquet(_file_name)
-    return file, file_folder, issue_data, test_file_meta_data
+        bbox_data_df = pd.read_parquet(_file_name)
+    return bbox_data_df, bbox_df, file, file_folder, issue_data
 
 
 @app.cell
-def __(mo):
-    mo.md(r"""#NOTE ONLY DOES EWJ FOR SPEED!!!""")
-    return
-
-
-@app.cell
-def __():
+def __(bbox_data_df):
+    bbox_data_df
     return
 
 
@@ -141,43 +178,103 @@ def __(mo):
 
 
 @app.cell
-def __():
-    return
+def __(os, pd, tqdm):
+    def create_stored_image_files_data(converted_folder, periodical_folders, cache_path='data/stored_image_files.parquet'):
+        """
+        Load image files DataFrame from cache if it exists, or create and save it if it doesn't.
+
+        Parameters:
+        -----------
+        converted_folder : str
+            Path to the main folder containing periodical subfolders
+        periodical_folders : list
+            List of periodical folder names
+        cache_path : str
+            Path where the parquet file should be saved/loaded from
+
+        Returns:
+        --------
+        pd.DataFrame
+            DataFrame containing image file information
+        """
+
+        # Check if cache file exists
+        if os.path.exists(cache_path):
+            print(f"Loading cached DataFrame from {cache_path}")
+            return pd.read_parquet(cache_path)
+
+        print("Cache not found. Creating new DataFrame...")
+
+        # Create new DataFrame
+        _image_file_list = []
+        for _folder in tqdm(periodical_folders):
+            _image_file_list = _image_file_list + os.listdir(os.path.join(converted_folder, _folder))
+
+        stored_image_files_df = pd.DataFrame({'filename': _image_file_list})
+
+        # Process DataFrame
+        stored_image_files_df['periodical_abbrev'] = stored_image_files_df['filename'].str.split('-').str[0]
+        stored_image_files_df['issue_date'] = stored_image_files_df['filename'].str.extract(r'-(\d{4}-\d{2}-\d{2})')
+        stored_image_files_df['page_number'] = stored_image_files_df['filename'].str.extract(r'page_(\d+)').astype(int)
+
+        # Save to cache
+        print(f"Saving DataFrame to {cache_path}")
+        stored_image_files_df.to_parquet(cache_path)
+
+        return stored_image_files_df
+    return (create_stored_image_files_data,)
 
 
 @app.cell
 def __(
     converted_folder,
+    create_stored_image_files_data,
+    periodical_folders,
+):
+    temp = create_stored_image_files_data(converted_folder, periodical_folders, cache_path='data/stored_image_files.parquet')
+    return (temp,)
+
+
+@app.cell
+def __(
+    bbox_data_df,
+    calculate_coverage_for_df,
+    converted_folder,
+    ground_truth_page_id,
     os,
     pd,
+    periodical_df,
     periodical_folders,
-    test_file_meta_data,
     tqdm,
 ):
     _target_file = 'data/file_name_to_id_map.parquet'
 
     if not os.path.exists(_target_file):
 
-        image_file_list = []
+        _image_file_list = []
         for _folder in tqdm(periodical_folders):
-            image_file_list = image_file_list + os.listdir(os.path.join(converted_folder, _folder))
+            _image_file_list = _image_file_list + os.listdir(os.path.join(converted_folder, _folder))
 
-        stored_image_files_df = pd.DataFrame({'filename':image_file_list})
+        stored_image_files_df = pd.DataFrame({'filename':_image_file_list})
 
         stored_image_files_df['periodical_abbrev'] = stored_image_files_df['filename'].str.split('-').str[0]
         stored_image_files_df['issue_date'] = stored_image_files_df['filename'].str.extract(r'-(\d{4}-\d{2}-\d{2})')
         stored_image_files_df['page_number'] = stored_image_files_df['filename'].str.extract(r'page_(\d+)').astype(int)
-
+    #
         _merge_columns = ['periodical_abbrev', 'issue_date', 'page_number']
 
         # First, calculate area sum grouped by the relevant columns
-        _area_sums = test_file_meta_data.groupby(['page_id'])['area'].sum().reset_index()
+        _area_sums = bbox_data_df.groupby(['page_id'])['bounding_box_area'].sum().reset_index()
+        _valid_bbox = bbox_data_df.groupby(['page_id'])['valid_bbox'].all().reset_index()
+        _overlap_fract = bbox_data_df.groupby(['page_id'])['overlap_fract'].max()
 
         # Then, perform the drop duplicates and merge operation without the area column
-        _base_data = test_file_meta_data[['issue_id', 'page_id', 'publication_id', 'width', 'height'] + _merge_columns].drop_duplicates()
+        _base_data = bbox_data_df[['issue_id', 'page_id', 'publication_id', 'width', 'height'] + _merge_columns].drop_duplicates()
 
         # Merge the area sums back
         _base_data = _base_data.merge(_area_sums, on=[ 'page_id'])
+        _base_data = _base_data.merge(_valid_bbox, on=[ 'page_id'])
+        _base_data = _base_data.merge(_overlap_fract, on=[ 'page_id'])
 
         # Finally, perform your original merge with stored_image_files_df
         file_name_to_id_map = _base_data.merge(
@@ -185,32 +282,130 @@ def __(
             left_on=_merge_columns, 
             right_index=True
         )
-        file_name_to_id_map.rename(columns = {'area':'bbox_total_area'},inplace=True)
-        file_name_to_id_map.to_parquet(_target_file)
-        file_name_to_id_map['percent_cover'] = file_name_to_id_map['bbox_total_area']/(file_name_to_id_map['width'] * file_name_to_id_map['height']) 
+        file_name_to_id_map.rename(columns = {'bounding_box_area':'bbox_total_area'},inplace=True)
+        #sums the total bounding box area and divides by image area. This ignores issues like overlap and out of image boxes
+        file_name_to_id_map['sum_percent_cover'] = (file_name_to_id_map['bbox_total_area']/(file_name_to_id_map['width'] * file_name_to_id_map['height'])).round(2)
 
+
+        #calculating percent cover of image
+        print('calculating bounding box percent coverage for each image')
+        _coverage_results = calculate_coverage_for_df(bbox_data_df)                                            
+        file_name_to_id_map = file_name_to_id_map.merge(_coverage_results, on = 'page_id')
+
+        file_name_to_id_map = file_name_to_id_map.merge(periodical_df[['id', 'abbreviation']].set_index('id'), left_on='publication_id', right_index=True)
+
+        file_name_to_id_map['gt_set'] = file_name_to_id_map['page_id'].isin(ground_truth_page_id)
+
+        file_name_to_id_map.to_parquet(_target_file)
     else:
         file_name_to_id_map = pd.read_parquet(_target_file)
-    return file_name_to_id_map, image_file_list, stored_image_files_df
+    return file_name_to_id_map, stored_image_files_df
 
 
 @app.cell
 def __(file_name_to_id_map):
-    file_name_to_id_map['percent_cover'].describe()
+    file_name_to_id_map.columns
+    return
+
+
+@app.cell
+def __(mo):
+    mo.md(
+        """
+        # Understanding Overlap and invalid boxes
+
+        There are a a substantial number of bounding boxes with substantial overlap as well as images where the bounding boxes extend beyond the image.
+
+        This suggests that there may be systematic errors in the way that the bounding boxes are sized relative to the reported original image size.
+
+        I need to try to understand what scaling or mislocation errors there are whether they are systematic or not and how to correct them.
+
+        The below figure shows that there is a substantial difference between the total image cover of the bounding boxes and the total area of the bounding boxes as a percent of the image. Some images have over 600% coverage
+        """
+    )
+    return
+
+
+@app.cell
+def __(file_name_to_id_map, sns):
+    sns.relplot(
+        data=file_name_to_id_map, 
+        x='sum_percent_cover', 
+        y='percent_cover', 
+        col='abbreviation',
+        kind='scatter',
+        col_wrap=3,  # Optional: number of panels per row
+        facet_kws={'sharey': False, 'sharex': False}
+    )
     return
 
 
 @app.cell
 def __(file_name_to_id_map):
-    file_name_to_id_map
+    file_name_to_id_map.loc[(file_name_to_id_map['abbreviation']=='MRUC') & (file_name_to_id_map['overlap_fract']>0.9)]
+    return
+
+
+@app.cell
+def __(bbox_data_df):
+    bbox_data_df.loc[bbox_data_df['page_id']==96401]
     return
 
 
 @app.cell
 def __(file_name_to_id_map):
-    import seaborn as sns
+    (file_name_to_id_map.groupby('abbreviation')['overlap_fract'].apply(lambda x: (x > 0.1).astype(int).mean()))
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    # Original overlap calculation
+    check_overlap = (file_name_to_id_map.groupby(['periodical_abbrev', 'publication_id'])
+                    ['overlap_fract'].apply(lambda x: (x > 0.1).astype(int).mean())).reset_index()
+
+    # Add count calculation
+    counts = file_name_to_id_map.groupby(['periodical_abbrev', 'publication_id']).size().reset_index(name='count')
+
+    # Merge the two
+    check_overlap = check_overlap.merge(counts, on=['periodical_abbrev', 'publication_id'])
+
+    check_overlap.loc[check_overlap['publication_id']==20]
+    return check_overlap, counts
+
+
+@app.cell
+def __(mo):
+    mo.md(
+        r"""
+        ## Invalid boxes
+
+        What we can see is that the vast majority of invalid boxes are concentrated in the Northern Star periodical, and within that the scan groups NS2, NS3, and NS4.
+        """
+    )
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    file_name_to_id_map.groupby(['abbreviation', 'publication_id'])['valid_bbox'].mean()
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    check_validity = file_name_to_id_map.groupby(['periodical_abbrev', 'publication_id']).agg({
+        'valid_bbox': ['mean', 'count']
+    }).reset_index()
+
+    check_validity.loc[check_validity['publication_id']==27]
+    return (check_validity,)
+
+
+@app.cell
+def __(file_name_to_id_map, sns):
     sns.kdeplot(data = file_name_to_id_map, x = 'bbox_total_area', hue = 'publication_id')
-    return (sns,)
+    return
 
 
 @app.cell
@@ -252,355 +447,16 @@ def __():
 
 
 @app.cell
-def __(test_file_meta_data):
-    test_file_meta_data.loc[test_file_meta_data['id']==503326]
+def __(bbox_data_df):
+    bbox_data_df.loc[bbox_data_df['id']==503326]
     return
-
-
-@app.cell
-def __(Image, KFold, json, os, scale_bbox):
-    def create_image_list(image_df, local_image_dir, coco_image_dir = ''):
-        """Create list of image dictionaries
-        image_df: dataframe. A pandas dataframe containing image meta data
-        local_image_dir: str. The path to the images on the computer used to open images and get addition info
-        coco_image_dir: str the path in the coco dataset, defaults to nothing so that json and images are all at same level.
-        """
-        image_list = []
-        for idx, row in image_df.iterrows():
-            image_path = os.path.join(local_image_dir, row['filename'])
-            with Image.open(image_path) as img:
-                width, height = img.size
-
-            image_list.append({
-                "id": row['page_id'],
-                "file_name": os.path.join(os.path.basename(coco_image_dir), row['filename']),
-                "width": width,
-                "height": height,
-                "license": 1,
-            })
-        return image_list
-
-    def to_coco_format(bbox):
-        """
-        Convert [x1, x2, y1, y2] to COCO format [x, y, width, height]
-        where (x, y) is the top-left corner
-        """
-        x1, x2, y1, y2 = bbox
-        width = x2 - x1
-        height = y2 - y1
-        return [x1, y1, width, height]
-
-    def create_annotation_list(bbox_df, image_list):
-        """Create list of annotation dictionaries"""
-
-        image_dict = {item['id']: item for item in image_list}
-        dimensions_dict = {item['id']: (item['width'], item['height'])for item in image_list}
-
-        temp_list = []
-
-        for idx, row in bbox_df.iterrows():
-            try:
-                #scale bounding boxes to current image size using reference from original scan
-                bounding_box_new = scale_bbox(row['bounding_box_list'], 
-                                            original_size=(row['width'], row['height']), 
-                                            new_size=dimensions_dict[row['page_id']])
-                bounding_box_new = to_coco_format(bounding_box_new)
-
-                temp_list.append({
-                    "id": row['id'],
-                    "image_id": row['page_id'],
-                    "category_id": row['article_type_id'],
-                    "bbox": bounding_box_new,
-                    "area": bounding_box_new[2] * bounding_box_new[3],
-                    "iscrowd": 0
-                })
-
-            except Exception as e:
-                print(f"Error processing row {idx}: {str(e)}")
-                continue
-
-        return temp_list
-
-    def turn_into_coco(meta_data_df, page_df, local_image_dir, coco_image_dir = ''):
-
-        images_list = create_image_list(page_df, 
-                                  local_image_dir,
-                                   coco_image_dir    )
-
-        annotations_list = create_annotation_list(meta_data_df, images_list )
-
-
-        categories_list = [
-                {
-                    "id": 1,
-                    "name": "article",
-                    "supercategory": "text"
-                },        {
-                    "id": 2,
-                    "name": "advert",
-                    "supercategory": "text"
-                },        {
-                    "id": 3,
-                    "name": "image",
-                    "supercategory": "image"
-                }
-            ]
-
-        return {'images': images_list, 'annotations': annotations_list, 'categories': categories_list}
-
-
-
-    def create_cross_validation_coco(meta_data_df, page_df, local_image_dir, output_dir, n_folds=5, coco_image_dir='', random_state=42):
-        """
-        Create and save x-fold cross-validation COCO format JSON files
-
-        Parameters:
-        -----------
-        meta_data_df : DataFrame
-            DataFrame containing annotation metadata
-        page_df : DataFrame
-            DataFrame containing page/image information
-        local_image_dir : str
-            Path to local image directory
-        output_dir : str
-            Directory where JSON files will be saved
-        n_folds : int
-            Number of folds for cross-validation
-        coco_image_dir : str
-            Path for images in COCO dataset
-        random_state : int
-            Random seed for reproducibility
-        """
-
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Get unique page IDs
-        unique_pages = page_df['page_id'].unique()
-
-        # Initialize K-fold
-        kf = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
-
-        # Perform k-fold split on page IDs
-        for fold, (train_idx, val_idx) in enumerate(kf.split(unique_pages)):
-            # Get train and validation page IDs
-            train_pages = unique_pages[train_idx]
-            val_pages = unique_pages[val_idx]
-
-            # Filter DataFrames for train set
-            train_page_df = page_df[page_df['page_id'].isin(train_pages)]
-            train_meta_df = meta_data_df[meta_data_df['page_id'].isin(train_pages)]
-
-            # Filter DataFrames for validation set
-            val_page_df = page_df[page_df['page_id'].isin(val_pages)]
-            val_meta_df = meta_data_df[meta_data_df['page_id'].isin(val_pages)]
-
-            # Create COCO format for train set
-            train_coco = turn_into_coco(
-                train_meta_df,
-                train_page_df,
-                local_image_dir,
-                coco_image_dir
-            )
-
-            # Create COCO format for validation set
-            val_coco = turn_into_coco(
-                val_meta_df,
-                val_page_df,
-                local_image_dir,
-                coco_image_dir
-            )
-
-            # Save train JSON
-            train_path = os.path.join(output_dir, f'train_fold_{fold}.json')
-            with open(train_path, 'w') as f:
-                json.dump(train_coco, f)
-
-            # Save validation JSON
-            val_path = os.path.join(output_dir, f'val_fold_{fold}.json')
-            with open(val_path, 'w') as f:
-                json.dump(val_coco, f)
-
-            print(f"Fold {fold + 1}/{n_folds} completed")
-            print(f"Train set size: {len(train_pages)} pages")
-            print(f"Validation set size: {len(val_pages)} pages")
-            print("------------------------")
-    return (
-        create_annotation_list,
-        create_cross_validation_coco,
-        create_image_list,
-        to_coco_format,
-        turn_into_coco,
-    )
-
-
-@app.cell
-def __(
-    converted_folder,
-    file_name_to_id_map,
-    os,
-    periodical_folders,
-    test_file_meta_data,
-    turn_into_coco,
-):
-    EWJ_journal = turn_into_coco(meta_data_df = test_file_meta_data.loc[test_file_meta_data['publication_id']==24], 
-                          page_df= file_name_to_id_map.loc[file_name_to_id_map['publication_id']==24], 
-                          local_image_dir = os.path.join(converted_folder, periodical_folders[0]),
-                        coco_image_dir=   os.path.join(converted_folder, periodical_folders[0])   )
-    return (EWJ_journal,)
-
-
-@app.cell
-def __(EWJ_journal, json):
-    with open('data/annotations.json', 'w') as f:
-        json.dump(EWJ_journal, f)
-    return (f,)
 
 
 @app.cell
 def __(mo):
     mo.md(
         """
-        create_cross_validation_coco(meta_data_df = test_file_meta_data.loc[test_file_meta_data['publication_id']==24], 
-                              page_df= file_name_to_id_map.loc[file_name_to_id_map['publication_id']==24], 
-                              local_image_dir = os.path.join(converted_folder, periodical_folders[0]),
-                            output_dir = os.path.join(converted_folder, 'EWJ_coco'), 
-                            n_folds=5,    
-                            coco_image_dir=   os.path.join(converted_folder, periodical_folders[0]))
-        """
-    )
-    return
-
-
-@app.cell
-def __(Image, KFold, os, shutil, yaml):
-    def convert_bbox_to_yolo(bbox, img_width, img_height):
-        """
-        Convert [x1, x2, y1, y2] format directly to YOLO format [x_center, y_center, width, height]
-        All values in YOLO format are normalized to [0, 1]
-        """
-        x1, x2, y1, y2 = bbox
-
-        # Calculate width and height
-        width = x2 - x1
-        height = y2 - y1
-
-        # Calculate center coordinates
-        x_center = x1 + width/2
-        y_center = y1 + height/2
-
-        # Normalize
-        x_center = x_center / img_width
-        y_center = y_center / img_height
-        width = width / img_width
-        height = height / img_height
-
-        return [x_center, y_center, width, height]
-
-    def create_yolo_annotation(image_path, annotations, img_width, img_height):
-        """Create YOLO format annotation file content"""
-        yolo_annotations = []
-
-        for ann in annotations:
-            category_id = ann['article_type_id'] - 1  # YOLO uses 0-based indexing
-            bbox = convert_bbox_to_yolo(ann['bounding_box_list'], img_width, img_height)
-            yolo_annotations.append(f"{category_id} {' '.join([str(x) for x in bbox])}")
-
-        return '\n'.join(yolo_annotations)
-
-    def create_cross_validation_yolo(meta_data_df, page_df, local_image_dir, output_dir, n_folds=5, random_state=42):
-        """
-        Create and save x-fold cross-validation YOLO format files
-        """
-        # Create output directory structure
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Get unique page IDs
-        unique_pages = page_df['page_id'].unique()
-
-        # Initialize K-fold
-        kf = KFold(n_splits=n_folds, shuffle=True, random_state=random_state)
-
-        # Create data.yaml file
-        yaml_content = {
-            'path': output_dir,
-            'train': 'images/train',
-            'val': 'images/val',
-            'nc': 3,  # number of classes
-            'names': ['article', 'advert', 'image']
-        }
-
-        with open(os.path.join(output_dir, 'data.yaml'), 'w') as f:
-            yaml.dump(yaml_content, f)
-
-        # Perform k-fold split
-        for fold, (train_idx, val_idx) in enumerate(kf.split(unique_pages)):
-            # Create fold-specific directories
-            fold_dir = os.path.join(output_dir, f'fold_{fold}')
-            for split in ['train', 'val']:
-                os.makedirs(os.path.join(fold_dir, 'images', split), exist_ok=True)
-                os.makedirs(os.path.join(fold_dir, 'labels', split), exist_ok=True)
-
-            # Get train and validation page IDs
-            train_pages = unique_pages[train_idx]
-            val_pages = unique_pages[val_idx]
-
-            # Process train and validation sets
-            for split, pages in [('train', train_pages), ('val', val_pages)]:
-                split_page_df = page_df[page_df['page_id'].isin(pages)]
-
-                for _, row in split_page_df.iterrows():
-                    # Get image information
-                    img_path = os.path.join(local_image_dir, row['filename'])
-                    with Image.open(img_path) as img:
-                        width, height = img.size
-
-                    # Get annotations for this image
-                    img_annotations = meta_data_df[meta_data_df['page_id'] == row['page_id']].to_dict('records')
-
-                    # Convert annotations to YOLO format
-                    yolo_content = create_yolo_annotation(img_path, img_annotations, width, height)
-
-                    # Create paths for new image and label files
-                    new_img_path = os.path.join(fold_dir, 'images', split, row['filename'])
-                    label_filename = os.path.splitext(row['filename'])[0] + '.txt'
-                    label_path = os.path.join(fold_dir, 'labels', split, label_filename)
-
-                    # Copy image to new location
-                    shutil.copy2(img_path, new_img_path)
-
-                    # Save YOLO format annotations
-                    with open(label_path, 'w') as f:
-                        f.write(yolo_content)
-
-            # Create fold-specific data.yaml
-            fold_yaml_content = {
-                'path': fold_dir,
-                'train': 'images/train',
-                'val': 'images/val',
-                'nc': 3,  # number of classes
-                'names': ['article', 'advert', 'image']
-            }
-
-            with open(os.path.join(fold_dir, 'data.yaml'), 'w') as f:
-                yaml.dump(fold_yaml_content, f)
-
-            print(f"Fold {fold + 1}/{n_folds} completed")
-            print(f"Train set size: {len(train_pages)} pages")
-            print(f"Validation set size: {len(val_pages)} pages")
-            print("------------------------")
-    return (
-        convert_bbox_to_yolo,
-        create_cross_validation_yolo,
-        create_yolo_annotation,
-    )
-
-
-@app.cell
-def __(mo):
-    mo.md(
-        """
-        create_cross_validation_yolo(meta_data_df = test_file_meta_data.loc[test_file_meta_data['publication_id']==24], 
+        create_cross_validation_yolo(meta_data_df = bbox_data_df.loc[bbox_data_df['publication_id']==24], 
                               page_df= file_name_to_id_map.loc[file_name_to_id_map['publication_id']==24], 
                               local_image_dir = os.path.join(converted_folder, periodical_folders[0]),
                             output_dir = os.path.join(converted_folder, 'EWJ_yolo'), 

@@ -1,9 +1,11 @@
 import pandas as pd
+import numpy as np
 import io
 import base64
 import math
 import difflib
 from pdf2image import convert_from_path
+import fitz
 import ast
 import time
 import os
@@ -83,17 +85,15 @@ def create_page_dict(df):
 
     return page_dict
 
-def scale_bbox(bbox, original_size, new_size, return_dict=False):
-    '''
-    Scale the bounding box from the original image size to the new image size.
-
-    :param bbox: List of [x1, x2, y1, y2] coordinates of the bounding box
-    :param original_size: Tuple of (width, height) of the original image
-    :param new_size: Tuple of (width, height) of the new image
-    :param return_dict: Boolean to determine return type (list or dictionary)
-    :return: Scaled bounding box coordinates as either list [x1, x2, y1, y2] or 
-            dictionary {'x0': x0, 'x1': x1, 'y0': y0, 'y1': y1}
-    '''
+def scale_bbox(df, original_size, new_size):
+    """
+    Scale bounding boxes in a DataFrame from the original image size to the new image size.
+    
+    :param df: DataFrame with columns 'x0', 'x1', 'y0', 'y1' containing bounding box coordinates.
+    :param original_size: Tuple of (width, height) of the original image.
+    :param new_size: Tuple of (width, height) of the new image.
+    :return: DataFrame with scaled bounding box coordinates as separate columns.
+    """
     original_width, original_height = original_size
     new_width, new_height = new_size
 
@@ -102,20 +102,13 @@ def scale_bbox(bbox, original_size, new_size, return_dict=False):
     height_scale = new_height / original_height
 
     # Scale the bounding box coordinates
-    x1, x2, y1, y2 = bbox
-    new_x1 = int(x1 * width_scale)
-    new_y1 = int(y1 * height_scale)
-    new_x2 = int(x2 * width_scale)
-    new_y2 = int(y2 * height_scale)
+    df['scaled_x0'] = (df['x0'].astype(float) * width_scale).astype(int)
+    df['scaled_x1'] = (df['x1'].astype(float) * width_scale).astype(int)
+    df['scaled_y0'] = (df['y0'].astype(float) * height_scale).astype(int)
+    df['scaled_y1'] = (df['y1'].astype(float) * height_scale).astype(int)
 
-    if return_dict:
-        return {
-            'x0': new_x1,
-            'x1': new_x2,
-            'y0': new_y1,
-            'y1': new_y2
-        }
-    return [new_x1, new_x2, new_y1, new_y2]
+    return df
+
 
 
 
@@ -572,7 +565,7 @@ def save_article_text(article_id, full_string, save_folder, dataset_df):
 
 
 
-def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=300, image_format='JPEG', use_greyscale=True, quality=85):
+def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=96, image_format='PNG', use_greyscale=True, quality=85):
     """
     Converts each page of a PDF file into an image and saves the images to an output folder.
 
@@ -584,53 +577,122 @@ def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=300, image
         Directory where the output images will be saved. Defaults to 'output_images'.
     dpi : int, optional
         Resolution for the converted images, in dots per inch. Higher values increase image quality.
+        Defaults to 96.
     image_format : str, optional
-        Image format for the output files. Supported formats are 'PNG' and 'JPEG'. Defaults to 'PNG'.
-    use_greyscale:
-        Whether to save as a 1 channel greyscale image, this reduces file size by about 66%. Default is True
+        Image format for the output files. Supported formats are 'PNG' and 'JPEG'. 
+        Defaults to 'PNG'.
+    use_greyscale : bool, optional
+        Whether to save as a 1 channel greyscale image. This reduces file size by about 66%.
+        Defaults to True.
+    quality : int, optional
+        The quality setting for JPEG compression (1-100). Higher values mean better quality but larger files.
+        Only applies when image_format is 'JPEG'. Defaults to 85.
+
+    Returns
+    -------
+    list of dict
+        A list containing dictionaries with information about each converted page:
+        - 'original_file': Path to the source PDF
+        - 'output_file': Path to the generated image file
+        - 'page_number': Page number in the PDF
+        - 'original_width': Width of the original PDF page
+        - 'original_height': Height of the original PDF page
+        - 'final_width': Width of the converted image
+        - 'final_height': Height of the converted image
 
     Raises
     ------
     ValueError
-        If an unsupported image format is specified.
+        If an unsupported image format is specified (only 'PNG' and 'JPEG' are supported).
 
     Notes
-    ------
-    The function names each image file with the original PDF filename, followed by '_page_X', 
-    where X is the page number.
+    -----
+    - The function creates the output directory if it doesn't exist.
+    - Output files are named as '{original_filename}_page_{page_number}.{extension}'.
+    - For JPEG format, quality and optimization parameters are applied.
+    - For PNG format, maximum compression is applied.
+    - When use_greyscale is True, images are converted to binary black and white using a threshold of 200.
 
     Examples
     --------
-    >>> convert_pdf_to_image('example.pdf', output_folder='images', dpi=200, image_format='JPEG')
+    >>> result = convert_pdf_to_image('example.pdf', 
+    ...                              output_folder='images', 
+    ...                              dpi=200, 
+    ...                              image_format='JPEG',
+    ...                              use_greyscale=True,
+    ...                              quality=85)
+    >>> print(result[0]['output_file'])
+    'images/example_page_1.jpg'
     """
     os.makedirs(output_folder, exist_ok=True)
     original_filename = os.path.splitext(os.path.basename(pdf_path))[0]
+    
+    # Get PDF information using PyMuPDF
+    doc = fitz.open(pdf_path)
+    page_metadata = []
+    
+    # Collect metadata for all pages
+    for page in doc:
+        # Get original DPI and point size
+        pixmap = page.get_pixmap()
+        original_dpi = pixmap.xres
+        rect = page.rect
+        
+        # Calculate pixel dimensions at target DPI
+        scale_factor = dpi / original_dpi
+        width = int(rect.width * scale_factor)
+        height = int(rect.height * scale_factor)
+        
+        page_metadata.append({
+            'original_dpi': original_dpi,
+            'point_width': rect.width,
+            'point_height': rect.height,
+            'pixel_width': width,
+            'pixel_height': height
+        })
+    
+    doc.close()
+    
+    # Convert PDF to images
     images = convert_from_path(pdf_path, dpi=dpi)
-
+    
+    # Validate format and get extension
     format_map = {'PNG': 'png', 'JPEG': 'jpg'}
     file_extension = format_map.get(image_format.upper())
     if not file_extension:
         raise ValueError("Unsupported format. Use 'PNG' or 'JPEG'.")
 
+    page_info = []
     for i, image in enumerate(images):
         output_file = os.path.join(output_folder, f'{original_filename}_page_{i + 1}.{file_extension}')
         
+        # Convert to greyscale if requested
         if use_greyscale:
-            # Convert to grayscale
             image = image.convert('L')
-            
-            # For black and white text documents, you can often binarize the image
-            # This converts the image to pure black and white
-            threshold = 200  # Adjust this value based on your images
+            threshold = 200
             image = image.point(lambda x: 0 if x < threshold else 255, '1')
-
-            
+        
+        # Save with appropriate format settings
         if image_format.upper() == 'JPEG':
-            # For JPEG, we can use quality parameter
             image.save(output_file, image_format.upper(), quality=quality, optimize=True)
         else:
-            # For PNG, use optimize
-            image.save(output_file, image_format.upper(), optimize=True, compression = 9)
+            image.save(output_file, image_format.upper(), optimize=True, compression=9)
+        
+        # Create info dictionary
+        page_info.append({
+            'original_file': pdf_path,
+            'output_file': output_file,
+            'page_number': i + 1,
+            'width': page_metadata[i]['pixel_width'],
+            'height': page_metadata[i]['pixel_height'],
+            'original_dpi': page_metadata[i]['original_dpi'],
+            'target_dpi': dpi,
+            'point_width': page_metadata[i]['point_width'],
+            'point_height': page_metadata[i]['point_height'],
+            'scale_factor': dpi / page_metadata[i]['original_dpi']
+        })
+    
+    return page_info
 
 
 def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=10):
@@ -1043,3 +1105,136 @@ def files_to_df_func(folder_path, text_column_name = 'content'):
     df['issue'] = df['file_name'].str.extract(r'issue_(.*?)_page', expand=False)
 
     return df
+
+
+
+def calculate_box_overlaps(df, image_id_column='page_id'):
+    """
+    Calculate the total fractional overlap for each bounding box with all other boxes in the same image.
+    Optimized using NumPy operations while maintaining index integrity.
+    """
+    def calculate_group_overlaps(group):
+        boxes = group[['x0', 'y0', 'x1', 'y1']].values
+        n_boxes = len(boxes)
+        
+        # Pre-allocate numpy array instead of pandas Series
+        overlaps = np.zeros(n_boxes)
+        
+        if n_boxes == 1:
+            return pd.Series(overlaps, index=group.index)
+
+        areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+
+        # Vectorized calculations
+        x_left = np.maximum.outer(boxes[:, 0], boxes[:, 0])
+        y_top = np.maximum.outer(boxes[:, 1], boxes[:, 1])
+        x_right = np.minimum.outer(boxes[:, 2], boxes[:, 2])
+        y_bottom = np.minimum.outer(boxes[:, 3], boxes[:, 3])
+
+        width = np.maximum(0, x_right - x_left)
+        height = np.maximum(0, y_bottom - y_top)
+        intersection = width * height
+
+        # Handle zero areas to avoid division warnings
+        valid_areas = areas > 0
+        overlap_matrix = np.zeros((n_boxes, n_boxes))
+        if valid_areas.any():
+            overlap_matrix[valid_areas] = (intersection[valid_areas] / 
+                                         areas[valid_areas, np.newaxis])
+
+        overlaps = np.sum(overlap_matrix, axis=1) - np.diagonal(overlap_matrix)
+
+        return pd.Series(overlaps, index=group.index)
+
+    return df.groupby(image_id_column).apply(calculate_group_overlaps).droplevel(0)
+
+
+
+def check_bboxes_valid(df, image_width, image_height):
+    """
+    Vectorized check if boxes are completely inside image frame.
+    
+    Parameters:
+    df: DataFrame with columns ['x0', 'x1', 'y0', 'y1']
+    image_width: width of the image
+    image_height: height of the image
+    
+    Returns:
+    Boolean Series where True indicates box is completely inside frame
+    """
+    return (
+        (df['x0'] >= 0) & 
+        (df['y0'] >= 0) & 
+        (df['x1'] <= df[image_width]) & 
+        (df['y1'] <= df[image_height])
+    )
+
+
+def calculate_coverage_percentage(image_width, image_height, boxes):
+    """
+    Calculate the percentage of image covered by bounding boxes
+    
+    Parameters:
+    image_width: width of the image
+    image_height: height of the image
+    boxes: list of tuples (x0, x1, y0, y1) representing bounding boxes
+    
+    Returns:
+    float: percentage of image covered by boxes
+    """
+    
+    # Create a binary mask the size of the image
+    mask = np.zeros((image_height, image_width), dtype=np.bool_)
+    
+    # For each bounding box
+    for x0, x1, y0, y1 in boxes:
+        # Clip coordinates to image boundaries
+        x0_clipped = max(0, min(int(x0), image_width))
+        x1_clipped = max(0, min(int(x1), image_width))
+        y0_clipped = max(0, min(int(y0), image_height))
+        y1_clipped = max(0, min(int(y1), image_height))
+        
+        # Set the area covered by the box to True
+        mask[y0_clipped:y1_clipped, x0_clipped:x1_clipped] = True
+    
+    # Calculate coverage
+    covered_pixels = np.sum(mask)
+    total_pixels = image_width * image_height
+    
+    # Calculate percentage
+    coverage_percentage = (covered_pixels / total_pixels) 
+    
+    return coverage_percentage
+
+def calculate_coverage_for_df(df):
+    """
+    Calculate coverage for each unique page_id in the DataFrame
+    
+    Parameters:
+    df: DataFrame with columns: page_id, width, height, x0, x1, y0, y1
+    
+    Returns:
+    DataFrame: DataFrame with page_id and coverage_percentage columns
+    """
+    
+    # Get unique page_ids first for tqdm
+    unique_page_ids = df['page_id'].unique()
+    
+    # Create list of dictionaries using list comprehension with tqdm
+    results = [
+        {
+            'page_id': page_id,
+            'percent_cover': calculate_coverage_percentage(
+                df[df['page_id'] == page_id]['width'].iloc[0],
+                df[df['page_id'] == page_id]['height'].iloc[0],
+                df[df['page_id'] == page_id][['x0', 'x1', 'y0', 'y1']].values
+            )
+        }
+        for page_id in tqdm(unique_page_ids, desc="Calculating coverage")
+    ]
+    
+    results = pd.DataFrame(results)
+    results['percent_cover'] = results['percent_cover'].round(2)
+
+    return results
+

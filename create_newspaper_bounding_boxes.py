@@ -7,7 +7,7 @@ app = marimo.App(width="medium")
 @app.cell
 def __():
     import os 
-    from helper_functions import files_to_df_func, scale_bbox, calculate_box_overlaps, check_bboxes_valid, calculate_coverage_for_df
+    from helper_functions import files_to_df_func, scale_bbox, check_bboxes_valid, calculate_coverage_and_overlap
     import pandas as pd
     from tqdm import tqdm
     import shutil
@@ -19,7 +19,7 @@ def __():
     import shutil
     import yaml
     import numpy as np
-
+    import matplotlib.pyplot as plt
     data_folder = 'data'
     #The folder where the pdfs have been converted to PNGs of various dpi.
     #To create better bounding boxes 72 dpi will be used.
@@ -43,8 +43,7 @@ def __():
     return (
         Image,
         KFold,
-        calculate_box_overlaps,
-        calculate_coverage_for_df,
+        calculate_coverage_and_overlap,
         check_bboxes_valid,
         convert_from_path,
         converted_folder,
@@ -56,6 +55,7 @@ def __():
         os,
         pd,
         periodical_folders,
+        plt,
         scale_bbox,
         shutil,
         sns,
@@ -87,16 +87,7 @@ def __(periodical_df):
 
 
 @app.cell
-def __(
-    ast,
-    calculate_box_overlaps,
-    check_bboxes_valid,
-    data_folder,
-    os,
-    pd,
-    periodical_df,
-    tqdm,
-):
+def __(ast, check_bboxes_valid, data_folder, os, pd, periodical_df, tqdm):
     _file_name = os.path.join(data_folder, 'ncse_data_metafile.parquet')
 
     # We need to add the page width and height to be able to scale to bounding boxes properly
@@ -156,7 +147,6 @@ def __(
         #... because lots of stupid is happening
 
         _df['valid_bbox'] = check_bboxes_valid(_df, 'width', 'height')
-        _df['overlap_fract'] = calculate_box_overlaps(_df, image_id_column='page_id')
 
         _df.to_parquet(_file_name)
         bbox_data_df = _df
@@ -167,7 +157,13 @@ def __(
 
 @app.cell
 def __(bbox_data_df):
-    bbox_data_df
+    bbox_data_df.groupby(['article_type_id', 'abbreviation']).size().reset_index()
+    return
+
+
+@app.cell
+def __(bbox_data_df):
+    bbox_data_df.groupby('page_id').agg(print_left=('x0', 'min'), print_top=('y0', 'min') , print_right=('x1', 'max'), print_bottom=('y1', 'max'))
     return
 
 
@@ -178,84 +174,46 @@ def __(mo):
 
 
 @app.cell
-def __(os, pd, tqdm):
-    def create_stored_image_files_data(converted_folder, periodical_folders, cache_path='data/stored_image_files.parquet'):
-        """
-        Load image files DataFrame from cache if it exists, or create and save it if it doesn't.
+def __(pd):
+    converted_page_info2 = pd.read_parquet('data/page_size_info.parquet')
 
-        Parameters:
-        -----------
-        converted_folder : str
-            Path to the main folder containing periodical subfolders
-        periodical_folders : list
-            List of periodical folder names
-        cache_path : str
-            Path where the parquet file should be saved/loaded from
-
-        Returns:
-        --------
-        pd.DataFrame
-            DataFrame containing image file information
-        """
-
-        # Check if cache file exists
-        if os.path.exists(cache_path):
-            print(f"Loading cached DataFrame from {cache_path}")
-            return pd.read_parquet(cache_path)
-
-        print("Cache not found. Creating new DataFrame...")
-
-        # Create new DataFrame
-        _image_file_list = []
-        for _folder in tqdm(periodical_folders):
-            _image_file_list = _image_file_list + os.listdir(os.path.join(converted_folder, _folder))
-
-        stored_image_files_df = pd.DataFrame({'filename': _image_file_list})
-
-        # Process DataFrame
-        stored_image_files_df['periodical_abbrev'] = stored_image_files_df['filename'].str.split('-').str[0]
-        stored_image_files_df['issue_date'] = stored_image_files_df['filename'].str.extract(r'-(\d{4}-\d{2}-\d{2})')
-        stored_image_files_df['page_number'] = stored_image_files_df['filename'].str.extract(r'page_(\d+)').astype(int)
-
-        # Save to cache
-        print(f"Saving DataFrame to {cache_path}")
-        stored_image_files_df.to_parquet(cache_path)
-
-        return stored_image_files_df
-    return (create_stored_image_files_data,)
+    converted_page_info2
+    return (converted_page_info2,)
 
 
 @app.cell
-def __(
-    converted_folder,
-    create_stored_image_files_data,
-    periodical_folders,
-):
-    temp = create_stored_image_files_data(converted_folder, periodical_folders, cache_path='data/stored_image_files.parquet')
-    return (temp,)
+def __(os, pd):
+    converted_page_info = pd.read_parquet('data/converted_page_size_info.parquet')
+
+    converted_page_info['filename'] = converted_page_info['output_file'].apply(os.path.basename)
+    return (converted_page_info,)
+
+
+@app.cell
+def __(converted_page_info):
+    converted_page_info
+    return
 
 
 @app.cell
 def __(
     bbox_data_df,
-    calculate_coverage_for_df,
-    converted_folder,
+    calculate_coverage_and_overlap,
+    converted_page_info,
     ground_truth_page_id,
     os,
     pd,
     periodical_df,
-    periodical_folders,
-    tqdm,
 ):
     _target_file = 'data/file_name_to_id_map.parquet'
 
     if not os.path.exists(_target_file):
 
-        _image_file_list = []
-        for _folder in tqdm(periodical_folders):
-            _image_file_list = _image_file_list + os.listdir(os.path.join(converted_folder, _folder))
+    #    _image_file_list = []
+    #    for _folder in tqdm(periodical_folders):
+    #        _image_file_list = _image_file_list + os.listdir(os.path.join(converted_folder, _folder))
 
-        stored_image_files_df = pd.DataFrame({'filename':_image_file_list})
+        stored_image_files_df = converted_page_info #pd.DataFrame({'filename':_image_file_list})
 
         stored_image_files_df['periodical_abbrev'] = stored_image_files_df['filename'].str.split('-').str[0]
         stored_image_files_df['issue_date'] = stored_image_files_df['filename'].str.extract(r'-(\d{4}-\d{2}-\d{2})')
@@ -282,14 +240,10 @@ def __(
             left_on=_merge_columns, 
             right_index=True
         )
-        file_name_to_id_map.rename(columns = {'bounding_box_area':'bbox_total_area'},inplace=True)
-        #sums the total bounding box area and divides by image area. This ignores issues like overlap and out of image boxes
-        file_name_to_id_map['sum_percent_cover'] = (file_name_to_id_map['bbox_total_area']/(file_name_to_id_map['width'] * file_name_to_id_map['height'])).round(2)
-
 
         #calculating percent cover of image
         print('calculating bounding box percent coverage for each image')
-        _coverage_results = calculate_coverage_for_df(bbox_data_df)                                            
+        _coverage_results = calculate_coverage_and_overlap(bbox_data_df)                                            
         file_name_to_id_map = file_name_to_id_map.merge(_coverage_results, on = 'page_id')
 
         file_name_to_id_map = file_name_to_id_map.merge(periodical_df[['id', 'abbreviation']].set_index('id'), left_on='publication_id', right_index=True)
@@ -304,7 +258,7 @@ def __(
 
 @app.cell
 def __(file_name_to_id_map):
-    file_name_to_id_map.columns
+    file_name_to_id_map
     return
 
 
@@ -328,21 +282,21 @@ def __(mo):
 
 @app.cell
 def __(file_name_to_id_map, sns):
-    sns.relplot(
-        data=file_name_to_id_map, 
-        x='sum_percent_cover', 
-        y='percent_cover', 
-        col='abbreviation',
-        kind='scatter',
-        col_wrap=3,  # Optional: number of panels per row
-        facet_kws={'sharey': False, 'sharex': False}
-    )
+    sns.kdeplot(data = file_name_to_id_map, x = 'total_coverage_percent', hue = 'abbreviation')
+    return
+
+
+@app.cell
+def __(file_name_to_id_map, plt, sns):
+    sns.kdeplot(data = file_name_to_id_map, x = 'text_overlap_percent', hue = 'abbreviation')
+    plt.ylim(0,10)
+    plt.show()
     return
 
 
 @app.cell
 def __(file_name_to_id_map):
-    file_name_to_id_map.loc[(file_name_to_id_map['abbreviation']=='MRUC') & (file_name_to_id_map['overlap_fract']>0.9)]
+    file_name_to_id_map.loc[(file_name_to_id_map['abbreviation']=='MRUC') & (file_name_to_id_map['text_overlap_percent']>0.9)]
     return
 
 
@@ -354,7 +308,13 @@ def __(bbox_data_df):
 
 @app.cell
 def __(file_name_to_id_map):
-    (file_name_to_id_map.groupby('abbreviation')['overlap_fract'].apply(lambda x: (x > 0.1).astype(int).mean()))
+    (file_name_to_id_map.groupby('abbreviation')[['text_overlap_percent']].apply(lambda x: (x > 0.05).astype(int).mean()))
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    (file_name_to_id_map.groupby('abbreviation')[['total_coverage_percent']].apply(lambda x: (x > 0.95).astype(int).mean()))
     return
 
 
@@ -400,12 +360,6 @@ def __(file_name_to_id_map):
 
     check_validity.loc[check_validity['publication_id']==27]
     return (check_validity,)
-
-
-@app.cell
-def __(file_name_to_id_map, sns):
-    sns.kdeplot(data = file_name_to_id_map, x = 'bbox_total_area', hue = 'publication_id')
-    return
 
 
 @app.cell

@@ -22,6 +22,7 @@ from tqdm import tqdm
 import re
 from markdown_it import MarkdownIt
 from mdit_plain.renderer import RendererPlain
+from numba import jit
 
 parser = MarkdownIt(renderer_cls=RendererPlain)
 
@@ -564,6 +565,80 @@ def save_article_text(article_id, full_string, save_folder, dataset_df):
         logging.error(f"Error saving article {article_id}: {str(e)}")
 
 
+def get_page_images_info(pdf_path):
+    """
+    Get metadata about images embedded in PDF pages.
+    
+    Args:
+        pdf_path (str): Path to the PDF file
+        
+    Returns:
+        list: List of dictionaries containing metadata for each image found
+              If no images are found, returns an empty list
+    
+    Raises:
+        FileNotFoundError: If PDF file doesn't exist
+        fitz.FileDataError: If PDF file is corrupted
+    """
+    doc = fitz.open(pdf_path)
+    page_images_info = []
+    
+    for page_num, page in enumerate(doc):
+        # Get the page's dimensions in points (1/72 inch)
+        page_rect = page.rect
+        page_width_pt = page_rect.width
+        page_height_pt = page_rect.height
+        
+        # Get images from the page
+        image_list = page.get_images()
+        
+        if not image_list:  # Add warning if no images found on page
+            print(f"Warning: No images found on page {page_num + 1}")
+            continue
+            
+        for img_index, img in enumerate(image_list):
+            try:
+                xref = img[0]
+                base_image = doc.extract_image(xref)
+                
+                if base_image:
+                    # Get actual image dimensions
+                    image_width = base_image["width"]
+                    image_height = base_image["height"]
+                    
+                    # Calculate effective DPI
+                    width_dpi = (image_width / page_width_pt) * 72
+                    height_dpi = (image_height / page_height_pt) * 72
+                    
+                    # Add aspect ratio check
+                    image_aspect_ratio = image_width / image_height
+                    page_aspect_ratio = page_width_pt / page_height_pt
+                    
+                    page_images_info.append({
+                        'page_num': page_num + 1,  # Make 1-based for user friendliness
+                        'image_index': img_index, #hopefully this will always be 0
+                        'pdf_width': image_width,
+                        'pdf_height': image_height,
+                        'page_width_pt': page_width_pt,
+                        'page_height_pt': page_height_pt,
+                        'calculated_width_dpi': round(width_dpi, 2),
+                        'calculated_height_dpi': round(height_dpi, 2),
+                        'image_aspect_ratio': round(image_aspect_ratio, 3),
+                        'page_aspect_ratio': round(page_aspect_ratio, 3),
+                        'image_format': base_image.get("ext", "unknown"),  # Get image format if available
+                    })
+                    
+            except Exception as e:
+                print(f"Error processing image {img_index} on page {page_num + 1}: {str(e)}")
+                continue
+    
+    doc.close()  # Properly close the document
+    
+    if not page_images_info:
+        print("Warning: No images found in the entire PDF")
+        
+    return page_images_info
+
 
 def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=96, image_format='PNG', use_greyscale=True, quality=85):
     """
@@ -628,30 +703,9 @@ def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=96, image_
     original_filename = os.path.splitext(os.path.basename(pdf_path))[0]
     
     # Get PDF information using PyMuPDF
-    doc = fitz.open(pdf_path)
-    page_metadata = []
-    
-    # Collect metadata for all pages
-    for page in doc:
-        # Get original DPI and point size
-        pixmap = page.get_pixmap()
-        original_dpi = pixmap.xres
-        rect = page.rect
-        
-        # Calculate pixel dimensions at target DPI
-        scale_factor = dpi / original_dpi
-        width = int(rect.width * scale_factor)
-        height = int(rect.height * scale_factor)
-        
-        page_metadata.append({
-            'original_dpi': original_dpi,
-            'point_width': rect.width,
-            'point_height': rect.height,
-            'pixel_width': width,
-            'pixel_height': height
-        })
-    
-    doc.close()
+    page_metadata = get_page_images_info(pdf_path)
+    if not page_metadata:
+        raise ValueError("No images found in PDF file")
     
     # Convert PDF to images
     images = convert_from_path(pdf_path, dpi=dpi)
@@ -664,6 +718,12 @@ def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=96, image_
 
     page_info = []
     for i, image in enumerate(images):
+        # Find corresponding metadata
+        meta = next((m for m in page_metadata if m['page_num'] == i + 1), None)
+        if not meta:
+            print(f"Warning: No metadata found for page {i + 1}")
+            continue
+            
         output_file = os.path.join(output_folder, f'{original_filename}_page_{i + 1}.{file_extension}')
         
         # Convert to greyscale if requested
@@ -678,20 +738,21 @@ def convert_pdf_to_image(pdf_path, output_folder='output_images', dpi=96, image_
         else:
             image.save(output_file, image_format.upper(), optimize=True, compression=9)
         
-        # Create info dictionary
-        page_info.append({
-            'original_file': pdf_path,
-            'output_file': output_file,
-            'page_number': i + 1,
-            'width': page_metadata[i]['pixel_width'],
-            'height': page_metadata[i]['pixel_height'],
-            'original_dpi': page_metadata[i]['original_dpi'],
-            'target_dpi': dpi,
-            'point_width': page_metadata[i]['point_width'],
-            'point_height': page_metadata[i]['point_height'],
-            'scale_factor': dpi / page_metadata[i]['original_dpi']
-        })
+        # Get the dimensions of the output image
+        output_width, output_height = image.size
+        
+        # Add output file path and dimensions to metadata
+        meta['output_file'] = output_file
+        meta['original_file'] = pdf_path
+        meta['target_dpi'] = dpi
+        meta['output_width'] = output_width
+        meta['output_height'] = output_height
+        
+        page_info.append(meta)
     
+    if not page_info:
+        raise ValueError("No pages were successfully processed")
+        
     return page_info
 
 
@@ -1170,71 +1231,95 @@ def check_bboxes_valid(df, image_width, image_height):
     )
 
 
-def calculate_coverage_percentage(image_width, image_height, boxes):
+@jit(nopython=True)
+def numba_fill_count(count_array, x0_adj, x1_adj, y0_adj, y1_adj):
+    for i in range(len(x0_adj)):
+        count_array[y0_adj[i]:y1_adj[i], x0_adj[i]:x1_adj[i]] += 1
+    return count_array
+
+def sum_of_area(df, mask_shape, y_min, x_min):
+    count_array = np.zeros(mask_shape, dtype=np.int32)
+    
+    # Convert coordinates to numpy arrays and adjust
+    x0_adj = (df['x0'] - x_min).astype(int).values
+    x1_adj = (df['x1'] - x_min).astype(int).values
+    y0_adj = (df['y0'] - y_min).astype(int).values
+    y1_adj = (df['y1'] - y_min).astype(int).values
+    
+    # Use numba-optimized function
+    count_array = numba_fill_count(count_array, x0_adj, x1_adj, y0_adj, y1_adj)
+
+    return count_array
+
+def calculate_article_coverage(group):
     """
-    Calculate the percentage of image covered by bounding boxes
-    
-    Parameters:
-    image_width: width of the image
-    image_height: height of the image
-    boxes: list of tuples (x0, x1, y0, y1) representing bounding boxes
-    
-    Returns:
-    float: percentage of image covered by boxes
+    Calculates the number of pixels in the page that are covered by bounding boxes
     """
+    y_min = group['y0'].min()
+    y_max = group['y1'].max()
+    x_min = group['x0'].min()
+    x_max = group['x1'].max()
+    print_height = int(y_max-y_min)
+    print_width = int(x_max-x_min)
     
-    # Create a binary mask the size of the image
-    mask = np.zeros((image_height, image_width), dtype=np.bool_)
+    mask_shape = (print_height, print_width)
     
-    # For each bounding box
-    for x0, x1, y0, y1 in boxes:
-        # Clip coordinates to image boundaries
-        x0_clipped = max(0, min(int(x0), image_width))
-        x1_clipped = max(0, min(int(x1), image_width))
-        y0_clipped = max(0, min(int(y0), image_height))
-        y1_clipped = max(0, min(int(y1), image_height))
-        
-        # Set the area covered by the box to True
-        mask[y0_clipped:y1_clipped, x0_clipped:x1_clipped] = True
+    # Split data by article type
+    text_data = group[group['article_type_id']!=3]
+    image_data = group[group['article_type_id']==3]
+    
+    # Calculate areas
+    text_counts = sum_of_area(text_data, mask_shape, y_min, x_min)
+    image_counts = sum_of_area(image_data, mask_shape, y_min, x_min)
     
     # Calculate coverage
-    covered_pixels = np.sum(mask)
-    total_pixels = image_width * image_height
+    text_overlap_pixels = np.sum(text_counts > 1)  # Pixels where text boxes overlap
+    text_coverage_pixels = np.sum(text_counts > 0)  # Total pixels covered by text (including overlap)
+    text_image_overlap = np.sum((text_counts > 0) & (image_counts > 0))  # Overlap between text and images
+    total_covered_pixels = np.sum((text_counts + image_counts) > 0)  # Total coverage
+    maximum_print_area = print_height * print_width
     
-    # Calculate percentage
-    coverage_percentage = (covered_pixels / total_pixels) 
-    
-    return coverage_percentage
-
-def calculate_coverage_for_df(df):
+    return pd.Series({
+        'text_coverage_pixels': text_coverage_pixels,
+        'text_overlap_pixels': text_overlap_pixels,
+        'text_image_overlap': text_image_overlap,
+        'total_covered_pixels': total_covered_pixels,
+        'maximum_print_area': maximum_print_area
+    })
+def calculate_coverage_and_overlap(df):
     """
-    Calculate coverage for each unique page_id in the DataFrame
-    
-    Parameters:
-    df: DataFrame with columns: page_id, width, height, x0, x1, y0, y1
-    
-    Returns:
-    DataFrame: DataFrame with page_id and coverage_percentage columns
+    Process the entire dataframe using a for loop with tqdm
     """
+    # Get unique page_ids
+    page_ids = df['page_id'].unique()
     
-    # Get unique page_ids first for tqdm
-    unique_page_ids = df['page_id'].unique()
+    # Initialize lists to store results
+    results = []
     
-    # Create list of dictionaries using list comprehension with tqdm
-    results = [
-        {
+    # Process each page_id
+    for page_id in tqdm(page_ids, desc="Processing pages"):
+        # Get data for this page
+        page_data = df[df['page_id'] == page_id]
+        
+        # Calculate coverage
+        coverage_data = calculate_article_coverage(page_data)
+        
+        # Store results
+        results.append({
             'page_id': page_id,
-            'percent_cover': calculate_coverage_percentage(
-                df[df['page_id'] == page_id]['width'].iloc[0],
-                df[df['page_id'] == page_id]['height'].iloc[0],
-                df[df['page_id'] == page_id][['x0', 'x1', 'y0', 'y1']].values
-            )
-        }
-        for page_id in tqdm(unique_page_ids, desc="Calculating coverage")
-    ]
+            'text_coverage_pixels': coverage_data['text_coverage_pixels'],
+            'text_overlap_pixels': coverage_data['text_overlap_pixels'],
+            'text_image_overlap': coverage_data['text_image_overlap'],
+            'total_covered_pixels': coverage_data['total_covered_pixels'],
+            'maximum_print_area': coverage_data['maximum_print_area']
+        })
     
-    results = pd.DataFrame(results)
-    results['percent_cover'] = results['percent_cover'].round(2)
-
-    return results
-
+    # Convert results to DataFrame
+    result_df = pd.DataFrame(results)
+    
+    # Calculate additional metrics if needed
+    result_df['text_coverage_percent'] = (result_df['text_coverage_pixels'] / result_df['maximum_print_area']).round(2)
+    result_df['text_overlap_percent'] = (result_df['text_overlap_pixels'] / result_df['text_coverage_pixels']).round(2)
+    result_df['total_coverage_percent'] = (result_df['total_covered_pixels'] / result_df['maximum_print_area']).round(2)
+    
+    return result_df

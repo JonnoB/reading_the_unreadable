@@ -31,15 +31,19 @@ def __():
     import os
     import numpy as np
     from helper_functions import scale_bbox
-
+    import seaborn as sns
     converted_folder = '/media/jonno/ncse/converted/all_files_png_72'
 
 
     bbox_data_df = pd.read_parquet(os.path.join('data', 'ncse_data_metafile.parquet'))
-    page_conversion_df = pd.read_parquet(os.path.join(converted_folder, 'page_size_info.parquet'))
-    page_conversion_df['filename'] = page_conversion_df['output_file'].apply(os.path.basename)
+    #page_conversion_df = pd.read_parquet(os.path.join(converted_folder, 'page_size_info.parquet'))
+    #page_conversion_df['filename'] = page_conversion_df['output_file'].apply(os.path.basename)
 
-    file_name_to_id_map = pd.read_parquet('data/file_name_to_id_map.parquet').merge(page_conversion_df, on = 'filename')
+    file_name_to_id_map = pd.read_parquet('data/file_name_to_id_map.parquet')#.merge(page_conversion_df, on = 'filename')
+
+    file_name_to_id_map['page_area'] = file_name_to_id_map['width_x'] * file_name_to_id_map['width_y']
+
+    file_name_to_id_map['page_coverage_percent'] = file_name_to_id_map['total_covered_pixels']/file_name_to_id_map['page_area'] 
 
     periodical_folders = pd.DataFrame({'folder_name':['English_Womans_Journal_issue_PDF_files', 'Leader_issue_PDF_files', 'Monthly_Repository_issue_PDF_files',
                          'Northern_Star_issue_PDF_files', 'Publishers_Circular_issue_PDF_files', 'Tomahawk_issue_PDF_files'],
@@ -51,18 +55,18 @@ def __():
         file_name_to_id_map,
         np,
         os,
-        page_conversion_df,
         patches,
         pd,
         periodical_folders,
         plt,
         scale_bbox,
+        sns,
     )
 
 
 @app.cell
 def __(bbox_data_df):
-    bbox_data_df
+    bbox_data_df.loc[bbox_data_df['page_id'].isin([164588,161934])]
     return
 
 
@@ -74,6 +78,7 @@ def __(Image, patches, pd, plt, scale_bbox):
         boxes_df: pd.DataFrame,
         page_id: str,
         figsize=(10, 10),
+        title = 'bounding boxes on page',
         box_color='red',
         box_linewidth=2,
         save_path=None,
@@ -134,17 +139,17 @@ def __(Image, patches, pd, plt, scale_bbox):
         new_height = int(img_height + pad_top + pad_bottom)
 
         # Create new image with padding
-        if img.mode == 'RGB':
-            new_img = Image.new('RGB', (new_width, new_height), padding_color)
-        else:
-            new_img = Image.new('L', (new_width, new_height), padding_color)
+        #if img.mode == 'RGB':
+        #    new_img = Image.new('RGB', (new_width, new_height), padding_color)
+        #else:
+        new_img = Image.new('L', (new_width, new_height), padding_color)
 
         # Paste original image onto padded image
         new_img.paste(img, (int(pad_left), int(pad_top)))
 
         # Create figure and axis
         fig, ax = plt.subplots(figsize=figsize)
-        ax.imshow(new_img)
+        ax.imshow(new_img, cmap='gray')
 
         # Draw each bounding box with adjusted coordinates
         for _, box in page_boxes.iterrows():
@@ -160,7 +165,7 @@ def __(Image, patches, pd, plt, scale_bbox):
 
         # Remove axes
         ax.axis('off')
-
+        plt.title(title)
         # Tight layout to remove extra white space
         plt.tight_layout()
 
@@ -175,38 +180,80 @@ def __(Image, patches, pd, plt, scale_bbox):
 
 @app.cell
 def __(file_name_to_id_map):
-    file_name_to_id_map.loc[file_name_to_id_map['publication_id']==20]
+    file_name_to_id_map.loc[file_name_to_id_map['abbreviation']=='NS'].groupby('valid_bbox').first()
 
     #file_name_to_id_map.loc[file_name_to_id_map['periodical_abbrev']== 'NS3']
     return
 
 
 @app.cell
-def __(file_name_to_id_map):
-    (file_name_to_id_map.groupby('periodical_abbrev')['overlap_fract'].apply(lambda x: (x > 0.1).astype(int).mean()))
+def __(file_name_to_id_map, sns):
+    sns.kdeplot(data = file_name_to_id_map.loc[file_name_to_id_map['abbreviation']=='NS'], x = 'point_width')
     return
 
 
-app._unparsable_cell(
-    r"""
-    page_id = 106249 
+@app.cell
+def __(file_name_to_id_map, sns):
+    sns.kdeplot(data = file_name_to_id_map.loc[(file_name_to_id_map['abbreviation']=='L')  ], x = 'point_width', hue = 'periodical_abbrev')
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    file_name_to_id_map.loc[file_name_to_id_map['abbreviation']=='EWJ']
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    file_name_to_id_map.groupby('abbreviation')['page_coverage_percent'].describe()
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    (file_name_to_id_map.groupby('abbreviation')['valid_bbox'].apply(lambda x: (x).astype(int).mean()))
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    (file_name_to_id_map.groupby('abbreviation')['page_coverage_percent'].apply(lambda x: ((x > 0.95) & (x<1.01)).astype(int).mean()))
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    (file_name_to_id_map.groupby('abbreviation')['valid_bbox'].apply(lambda x: (x).astype(int).mean()))
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    (file_name_to_id_map.groupby('abbreviation').apply(
+        lambda x: ((x['valid_bbox']) & (x['text_overlap_percent'] < 0.1)).astype(int).mean()
+    ))
+    return
+
+
+@app.cell
+def __(bbox_data_df, file_name_to_id_map):
+    page_id = 101984
 
     #167499 NS3 (1307*1.805, 2197*1.805)
     #168959 NS4
     165363
 
-    bboxes = bbox_data_df.loc[bbox_data_df['page_id']==page_id].iloc[[4,1##]] #2,7
+    bboxes = bbox_data_df.loc[bbox_data_df['page_id']==page_id]#.iloc[[4,1]] #2,7
 
     pub_id = bboxes['publication_id'].unique()[0]
 
 
-    size_df = file_name_to_id_map.loc[file_name_to_id_map['page_id']==page_id].filter(regex = 'width|height')
+    size_df = file_name_to_id_map.loc[file_name_to_id_map['page_id']==page_id].filter(regex = 'width|height|coverage')
     print(size_df)
 
     bboxes
-    """,
-    name="__"
-)
+    return bboxes, page_id, pub_id, size_df
 
 
 @app.cell
@@ -226,8 +273,72 @@ def __(
     plot_image_with_boxes(file_name_to_id_map,
                           bboxes,
                           page_id,    
-                          original_size=(size_df['width'].values, size_df['height'].values),#(2359, 3965),  
-                          new_size=  (size_df['final_width'].values, size_df['final_height'].values)#(size_df['final_width'].values, size_df['final_height'].values)
+                          original_size=(size_df['width_x'].values, size_df['height_x'].values),#(2359, 3965),  
+                          new_size=  (size_df['width_y'].values, size_df['height_y'].values)#(size_df['final_width'].values, size_df['final_height'].values)
+                         )
+
+    return
+
+
+@app.cell
+def __(bbox_data_df, bboxes, file_name_to_id_map, plot_image_with_boxes):
+    _page_id = 164588
+
+    _bboxes = bbox_data_df.loc[bbox_data_df['page_id']==_page_id]
+    _pub_id = bboxes['publication_id'].unique()[0]
+
+
+    _size_df = file_name_to_id_map.loc[file_name_to_id_map['page_id']==_page_id].filter(regex = 'width|height')
+
+
+    plot_image_with_boxes(file_name_to_id_map,
+                          _bboxes,
+                          _page_id,    
+                          original_size=(_size_df['width_x'].values/0.74, _size_df['height_x'].values/0.74),
+                          new_size=  (_size_df['width_y'].values, _size_df['height_y'].values),
+                          title = 'Example of overlapping bounding boxes'
+                         )
+
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    file_name_to_id_map.loc[file_name_to_id_map['page_id']==101984]
+    return
+
+
+@app.cell
+def __(file_name_to_id_map):
+    file_name_to_id_map.loc[file_name_to_id_map['abbreviation']=='L', 'page_id'].sample(10)
+    return
+
+
+@app.cell
+def __():
+    71/96
+    return
+
+
+@app.cell
+def __(bbox_data_df, bboxes, file_name_to_id_map, plot_image_with_boxes):
+    _page_id = 96348
+
+    _bboxes = bbox_data_df.loc[bbox_data_df['page_id']==_page_id]
+    _pub_id = bboxes['publication_id'].unique()[0]
+
+
+    _size_df = file_name_to_id_map.loc[file_name_to_id_map['page_id']==_page_id].filter(regex = 'width|height')
+
+    print(_size_df['point_width'].values)
+    print(_size_df['width_x'].values*0.75)
+
+    plot_image_with_boxes(file_name_to_id_map,
+                          _bboxes,
+                          _page_id,    
+                          original_size=(_size_df['width_x'].values*0.74, _size_df['height_x'].values*0.74),
+                          new_size=  (_size_df['width_y'].values, _size_df['height_y'].values),
+                          title = 'Example of overlapping bounding boxes'
                          )
     return
 

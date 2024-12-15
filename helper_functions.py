@@ -568,23 +568,11 @@ def save_article_text(article_id, full_string, save_folder, dataset_df):
 def get_page_images_info(pdf_path):
     """
     Get metadata about images embedded in PDF pages.
-    
-    Args:
-        pdf_path (str): Path to the PDF file
-        
-    Returns:
-        list: List of dictionaries containing metadata for each image found
-              If no images are found, returns an empty list
-    
-    Raises:
-        FileNotFoundError: If PDF file doesn't exist
-        fitz.FileDataError: If PDF file is corrupted
     """
     doc = fitz.open(pdf_path)
     page_images_info = []
     
     for page_num, page in enumerate(doc):
-        # Get the page's dimensions in points (1/72 inch)
         page_rect = page.rect
         page_width_pt = page_rect.width
         page_height_pt = page_rect.height
@@ -592,47 +580,43 @@ def get_page_images_info(pdf_path):
         # Get images from the page
         image_list = page.get_images()
         
-        if not image_list:  # Add warning if no images found on page
+        if not image_list:
             print(f"Warning: No images found on page {page_num + 1}")
             continue
             
         for img_index, img in enumerate(image_list):
             try:
-                xref = img[0]
-                base_image = doc.extract_image(xref)
+                # Get image info without extracting the full image
+                image_width = img[2]  # width is at index 2
+                image_height = img[3]  # height is at index 3
                 
-                if base_image:
-                    # Get actual image dimensions
-                    image_width = base_image["width"]
-                    image_height = base_image["height"]
-                    
-                    # Calculate effective DPI
-                    width_dpi = (image_width / page_width_pt) * 72
-                    height_dpi = (image_height / page_height_pt) * 72
-                    
-                    # Add aspect ratio check
-                    image_aspect_ratio = image_width / image_height
-                    page_aspect_ratio = page_width_pt / page_height_pt
-                    
-                    page_images_info.append({
-                        'page_num': page_num + 1,  # Make 1-based for user friendliness
-                        'image_index': img_index, #hopefully this will always be 0
-                        'pdf_width': image_width,
-                        'pdf_height': image_height,
-                        'page_width_pt': page_width_pt,
-                        'page_height_pt': page_height_pt,
-                        'calculated_width_dpi': round(width_dpi, 2),
-                        'calculated_height_dpi': round(height_dpi, 2),
-                        'image_aspect_ratio': round(image_aspect_ratio, 3),
-                        'page_aspect_ratio': round(page_aspect_ratio, 3),
-                        'image_format': base_image.get("ext", "unknown"),  # Get image format if available
-                    })
+                # Calculate effective DPI
+                width_dpi = (image_width / page_width_pt) * 72
+                height_dpi = (image_height / page_height_pt) * 72
+                
+                # Calculate aspect ratios
+                image_aspect_ratio = image_width / image_height
+                page_aspect_ratio = page_width_pt / page_height_pt
+                
+                page_images_info.append({
+                    'page_num': page_num + 1,
+                    'image_index': img_index,
+                    'pdf_width': image_width,
+                    'pdf_height': image_height,
+                    'page_width_pt': page_width_pt,
+                    'page_height_pt': page_height_pt,
+                    'calculated_width_dpi': round(width_dpi, 2),
+                    'calculated_height_dpi': round(height_dpi, 2),
+                    'image_aspect_ratio': round(image_aspect_ratio, 3),
+                    'page_aspect_ratio': round(page_aspect_ratio, 3),
+                    'image_format': 'assume png',
+                })
                     
             except Exception as e:
                 print(f"Error processing image {img_index} on page {page_num + 1}: {str(e)}")
                 continue
     
-    doc.close()  # Properly close the document
+    doc.close()
     
     if not page_images_info:
         print("Warning: No images found in the entire PDF")

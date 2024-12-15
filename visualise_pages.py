@@ -16,6 +16,20 @@ def __(mo):
         """
         # Visualise pages
         This notebook is simply to help visualise the pages with bounding boxes on top
+
+
+        How many images have low levels of overlap and high levels of covereage?
+
+        Images with high levels of overlap and boxes that have high levels of covereage are good targets for fixing.
+
+        If a model shows a drop in overlap and an equal measure of coverage. This means it is working better than the original dataset.
+
+        Train two models.
+
+        - Model 1 uses all the data
+        - Model 2 uses only low overlap, high coverage data.
+
+        Predict on test set, see if metrics improve.
         """
     )
     return
@@ -32,7 +46,10 @@ def __():
     import numpy as np
     from helper_functions import scale_bbox
     import seaborn as sns
+    import random
     converted_folder = '/media/jonno/ncse/converted/all_files_png_72'
+
+    from helper_functions_plotting import plot_multiple_images_with_boxes, plot_single_image_with_boxes
 
 
     bbox_data_df = pd.read_parquet(os.path.join('data', 'ncse_data_metafile.parquet'))
@@ -41,7 +58,7 @@ def __():
 
     file_name_to_id_map = pd.read_parquet('data/file_name_to_id_map.parquet')#.merge(page_conversion_df, on = 'filename')
 
-    file_name_to_id_map['page_area'] = file_name_to_id_map['width_x'] * file_name_to_id_map['width_y']
+    file_name_to_id_map['page_area'] = file_name_to_id_map['width'] * file_name_to_id_map['width']
 
     file_name_to_id_map['page_coverage_percent'] = file_name_to_id_map['total_covered_pixels']/file_name_to_id_map['page_area'] 
 
@@ -58,7 +75,10 @@ def __():
         patches,
         pd,
         periodical_folders,
+        plot_multiple_images_with_boxes,
+        plot_single_image_with_boxes,
         plt,
+        random,
         scale_bbox,
         sns,
     )
@@ -66,116 +86,19 @@ def __():
 
 @app.cell
 def __(bbox_data_df):
-    bbox_data_df.loc[bbox_data_df['page_id'].isin([164588,161934])]
+    bbox_data_df.loc[bbox_data_df['page_id'].isin([97044])]
     return
 
 
 @app.cell
-def __(Image, patches, pd, plt, scale_bbox):
-    def plot_image_with_boxes(
-        #image_root: str,
-        image_df: pd.DataFrame,
-        boxes_df: pd.DataFrame,
-        page_id: str,
-        figsize=(10, 10),
-        title = 'bounding boxes on page',
-        box_color='red',
-        box_linewidth=2,
-        save_path=None,
-        padding_color='white',
-        original_size=None,  
-        new_size=None      
-    ):
-        """
-        Plot an image with its corresponding bounding boxes, padding the image if boxes extend beyond frame.
+def __():
+    return
 
-        Parameters:
-        - image_root: str, root directory containing the images
-        - image_df: DataFrame with columns ['page_id', 'filename']
-        - boxes_df: DataFrame with columns ['page_id', 'x0', 'x1', 'y0', 'y1']
-        - page_id: str, the ID of the page to plot
-        - figsize: tuple, size of the figure (width, height)
-        - box_color: str, color of the bounding boxes
-        - box_linewidth: int, width of the bounding box lines
-        - save_path: str or None, if provided, saves the plot to this path
-        - padding_color: str, color of the padding
-        """
 
-        # Get the filename for this page_id
-        #filename = image_df[image_df['page_id'] == page_id]['filename'].iloc[0]
-        #image_path = os.path.join(image_root, filename)
-        image_path = image_df[image_df['page_id'] == page_id]['output_file'].iloc[0]
-
-        # Load the image
-        img = Image.open(image_path)
-        img_width, img_height = img.size
-
-        # Get boxes for this page_id
-        page_boxes = boxes_df[boxes_df['page_id'] == page_id].copy()  # Create a copy to avoid modifying original
-
-        # Apply scaling if parameters are provided
-        if original_size and new_size:
-            page_boxes = scale_bbox(page_boxes, original_size, new_size)
-            # Use the scaled coordinates
-            coord_cols = ['scaled_x0', 'scaled_x1', 'scaled_y0', 'scaled_y1']
-        else:
-            # Use the original coordinates
-            coord_cols = ['x0', 'x1', 'y0', 'y1']
-
-        # Calculate required padding using the appropriate coordinates
-        min_x = min(page_boxes[coord_cols[0]].min()-20, 0)
-        min_y = min(page_boxes[coord_cols[2]].min()-20, 0)
-        max_x = max(page_boxes[coord_cols[1]].max()+20, img_width)
-        max_y = max(page_boxes[coord_cols[3]].max()+20, img_height)
-
-        # Calculate padding dimensions
-        pad_left = abs(min(min_x, 0))
-        pad_top = abs(min(min_y, 0))
-        pad_right = max(max_x - img_width, 0)
-        pad_bottom = max(max_y - img_height, 0)
-
-        # Create new image with padding
-        new_width = int(img_width + pad_left + pad_right)
-        new_height = int(img_height + pad_top + pad_bottom)
-
-        # Create new image with padding
-        #if img.mode == 'RGB':
-        #    new_img = Image.new('RGB', (new_width, new_height), padding_color)
-        #else:
-        new_img = Image.new('L', (new_width, new_height), padding_color)
-
-        # Paste original image onto padded image
-        new_img.paste(img, (int(pad_left), int(pad_top)))
-
-        # Create figure and axis
-        fig, ax = plt.subplots(figsize=figsize)
-        ax.imshow(new_img, cmap='gray')
-
-        # Draw each bounding box with adjusted coordinates
-        for _, box in page_boxes.iterrows():
-            rect = patches.Rectangle(
-                (box[coord_cols[0]] + pad_left, box[coord_cols[2]] + pad_top),
-                box[coord_cols[1]] - box[coord_cols[0]],
-                box[coord_cols[3]] - box[coord_cols[2]],
-                linewidth=box_linewidth,
-                edgecolor=box_color,
-                facecolor='none'
-            )
-            ax.add_patch(rect)
-
-        # Remove axes
-        ax.axis('off')
-        plt.title(title)
-        # Tight layout to remove extra white space
-        plt.tight_layout()
-
-        # Save if save_path is provided
-        if save_path:
-            plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
-            plt.close()
-        else:
-            plt.show()
-    return (plot_image_with_boxes,)
+@app.cell
+def __(file_name_to_id_map):
+    file_name_to_id_map.loc[file_name_to_id_map['page_id']==97044]
+    return
 
 
 @app.cell
@@ -187,14 +110,20 @@ def __(file_name_to_id_map):
 
 
 @app.cell
-def __(file_name_to_id_map, sns):
-    sns.kdeplot(data = file_name_to_id_map.loc[file_name_to_id_map['abbreviation']=='NS'], x = 'point_width')
+def __(file_name_to_id_map):
+    file_name_to_id_map
     return
 
 
 @app.cell
 def __(file_name_to_id_map, sns):
-    sns.kdeplot(data = file_name_to_id_map.loc[(file_name_to_id_map['abbreviation']=='L')  ], x = 'point_width', hue = 'periodical_abbrev')
+    sns.kdeplot(data = file_name_to_id_map.loc[file_name_to_id_map['abbreviation']=='L'], x = 'page_width_pt')
+    return
+
+
+@app.cell
+def __(file_name_to_id_map, sns):
+    sns.kdeplot(data = file_name_to_id_map.loc[(file_name_to_id_map['abbreviation']=='L')  ], x = 'page_width_pt', hue = 'periodical_abbrev')
     return
 
 
@@ -238,7 +167,8 @@ def __(file_name_to_id_map):
 
 @app.cell
 def __(bbox_data_df, file_name_to_id_map):
-    page_id = 101984
+    page_id = 100886
+
 
     #167499 NS3 (1307*1.805, 2197*1.805)
     #168959 NS4
@@ -263,83 +193,176 @@ def __():
 
 
 @app.cell
+def __(bbox_data_df, file_name_to_id_map, plot_single_image_with_boxes):
+    # Get a single page_id
+    _page_id = 164588 # or use any specific page_id
+
+    # Get the image path and boxes for this page
+    _image_path = file_name_to_id_map[file_name_to_id_map['page_id'] == _page_id]['output_file'].iloc[0]
+    _page_boxes = bbox_data_df[bbox_data_df['page_id'] == _page_id]
+
+    # Plot the single image with boxes
+    plot_single_image_with_boxes(
+        image_path=_image_path,
+        boxes_df=_page_boxes,
+        scale_factor_x=1.064,
+        scale_factor_y=1.064,
+        title=f'Page ID: {_page_id}'
+    )
+    return
+
+
+@app.cell
+def __(bbox_data_df, file_name_to_id_map, plot_single_image_with_boxes):
+
+    # Get a single page_id
+    _page_id = 96348 # or use any specific page_id
+
+    # Get the image path and boxes for this page
+    _image_path = file_name_to_id_map[file_name_to_id_map['page_id'] == _page_id]['output_file'].iloc[0]
+    _page_boxes = bbox_data_df[bbox_data_df['page_id'] == _page_id]
+
+    # Plot the single image with boxes
+    plot_single_image_with_boxes(
+        image_path=_image_path,
+        boxes_df=_page_boxes,
+        scale_factor_x=1.064,
+        scale_factor_y=1.064,
+        title=f'Page ID: {_page_id}'
+    )
+
+    return
+
+
+@app.cell
+def __(bbox_data_df, file_name_to_id_map, plot_multiple_images_with_boxes):
+    file_name_to_id_map2 = file_name_to_id_map.loc[file_name_to_id_map['periodical_abbrev']=='LDR']
+
+    plot_multiple_images_with_boxes(
+        file_name_to_id_map2,
+        bbox_data_df,
+        file_name_to_id_map2['page_id'].sample(6).to_list(),  # List of 6 page IDs
+        figsize=(10, 15),  # Larger figure size to accommodate multiple plots
+        box_color='red',
+        box_linewidth=2,
+        padding_color='white',
+        scale_factor_x = 1.064,
+        scale_factor_y = 1.064,
+        save_path=None
+    )
+
+    return (file_name_to_id_map2,)
+
+
+@app.cell
 def __(
-    bboxes,
+    bbox_data_df,
     file_name_to_id_map,
-    page_id,
-    plot_image_with_boxes,
-    size_df,
+    np,
+    plot_multiple_images_with_boxes,
 ):
-    plot_image_with_boxes(file_name_to_id_map,
-                          bboxes,
-                          page_id,    
-                          original_size=(size_df['width_x'].values, size_df['height_x'].values),#(2359, 3965),  
-                          new_size=  (size_df['width_y'].values, size_df['height_y'].values)#(size_df['final_width'].values, size_df['final_height'].values)
-                         )
+    bbox_data_df2 = bbox_data_df.loc[(bbox_data_df['page_fract']>0.5) & 
+    bbox_data_df['page_id'].isin(file_name_to_id_map.loc[(file_name_to_id_map['text_overlap_percent'] >0.15), 'page_id'])]
+    file_name_to_id_map['page_id'].sample(6).tolist()
 
-    return
+    plot_multiple_images_with_boxes(
+        file_name_to_id_map,
+        bbox_data_df2,
+        np.random.choice(bbox_data_df2['page_id'].unique(), size=6, replace=False),  # List of 6 page IDs
+        figsize=(10, 15),  # Larger figure size to accommodate multiple plots
+        box_color='red',
+        box_linewidth=2,
+        padding_color='white',
+        scale_factor_x = 1.064,
+        scale_factor_y = 1.064,
+        save_path=None
+    )
+
+
+    return (bbox_data_df2,)
 
 
 @app.cell
-def __(bbox_data_df, bboxes, file_name_to_id_map, plot_image_with_boxes):
-    _page_id = 164588
-
-    _bboxes = bbox_data_df.loc[bbox_data_df['page_id']==_page_id]
-    _pub_id = bboxes['publication_id'].unique()[0]
-
-
-    _size_df = file_name_to_id_map.loc[file_name_to_id_map['page_id']==_page_id].filter(regex = 'width|height')
-
-
-    plot_image_with_boxes(file_name_to_id_map,
-                          _bboxes,
-                          _page_id,    
-                          original_size=(_size_df['width_x'].values/0.74, _size_df['height_x'].values/0.74),
-                          new_size=  (_size_df['width_y'].values, _size_df['height_y'].values),
-                          title = 'Example of overlapping bounding boxes'
-                         )
-
+def __(mo):
+    mo.md(
+        r"""
+        Problem pages
+        Leader
+         - 103122
+         - 137464
+         - -137504 looks like a dup
+        """
+    )
     return
 
 
 @app.cell
 def __(file_name_to_id_map):
-    file_name_to_id_map.loc[file_name_to_id_map['page_id']==101984]
-    return
-
-
-@app.cell
-def __(file_name_to_id_map):
-    file_name_to_id_map.loc[file_name_to_id_map['abbreviation']=='L', 'page_id'].sample(10)
+    file_name_to_id_map[file_name_to_id_map['page_id'] == 137464]
     return
 
 
 @app.cell
 def __():
-    71/96
+    (801/1536, 1051/2016 )
     return
 
 
 @app.cell
-def __(bbox_data_df, bboxes, file_name_to_id_map, plot_image_with_boxes):
-    _page_id = 96348
-
-    _bboxes = bbox_data_df.loc[bbox_data_df['page_id']==_page_id]
-    _pub_id = bboxes['publication_id'].unique()[0]
+def __(file_name_to_id_map):
+    file_name_to_id_map['periodical_abbrev'].unique()
+    return
 
 
-    _size_df = file_name_to_id_map.loc[file_name_to_id_map['page_id']==_page_id].filter(regex = 'width|height')
+@app.cell
+def __(bbox_data_df, file_name_to_id_map, plot_single_image_with_boxes):
 
-    print(_size_df['point_width'].values)
-    print(_size_df['width_x'].values*0.75)
+    # Get a single page_id
+    _page_id = 103122 # or use any specific page_id
 
-    plot_image_with_boxes(file_name_to_id_map,
-                          _bboxes,
-                          _page_id,    
-                          original_size=(_size_df['width_x'].values*0.74, _size_df['height_x'].values*0.74),
-                          new_size=  (_size_df['width_y'].values, _size_df['height_y'].values),
-                          title = 'Example of overlapping bounding boxes'
-                         )
+    # Get the image path and boxes for this page
+    _image_path = file_name_to_id_map[file_name_to_id_map['page_id'] == _page_id]['output_file'].iloc[0]
+    _page_boxes = bbox_data_df[bbox_data_df['page_id'] == _page_id]
+
+    # Plot the single image with boxes
+    plot_single_image_with_boxes(
+        image_path=_image_path,
+        boxes_df=_page_boxes,
+        scale_factor_x=0.89,
+        scale_factor_y=0.89,
+        box_color='red',
+        box_linewidth=1,
+        padding_color='white',
+        padding=20,
+        title=f'Page ID: {_page_id}'
+    )
+
+    return
+
+
+@app.cell
+def __(bbox_data_df, file_name_to_id_map, plot_single_image_with_boxes):
+
+    # Get a single page_id
+    _page_id = 83320 # or use any specific page_id
+
+    # Get the image path and boxes for this page
+    _image_path = file_name_to_id_map[file_name_to_id_map['page_id'] == _page_id]['output_file'].iloc[0]
+    _page_boxes = bbox_data_df[bbox_data_df['page_id'] == _page_id]
+
+    # Plot the single image with boxes
+    plot_single_image_with_boxes(
+        image_path=_image_path,
+        boxes_df=_page_boxes,
+        scale_factor_x=1.064,
+        scale_factor_y=1.064,
+        box_color='red',
+        box_linewidth=1,
+        padding_color='white',
+        padding=20,
+        title=f'Page ID: {_page_id}'
+    )
+
     return
 
 

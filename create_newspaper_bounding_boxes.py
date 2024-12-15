@@ -174,16 +174,8 @@ def __(mo):
 
 
 @app.cell
-def __(pd):
-    converted_page_info2 = pd.read_parquet('data/page_size_info.parquet')
-
-    converted_page_info2
-    return (converted_page_info2,)
-
-
-@app.cell
 def __(os, pd):
-    converted_page_info = pd.read_parquet('data/converted_page_size_info.parquet')
+    converted_page_info = pd.read_parquet('data/page_size_info.parquet')
 
     converted_page_info['filename'] = converted_page_info['output_file'].apply(os.path.basename)
     return (converted_page_info,)
@@ -192,6 +184,12 @@ def __(os, pd):
 @app.cell
 def __(converted_page_info):
     converted_page_info
+    return
+
+
+@app.cell
+def __(mo):
+    mo.md(r"""# """)
     return
 
 
@@ -207,13 +205,21 @@ def __(
 ):
     _target_file = 'data/file_name_to_id_map.parquet'
 
+    if not os.path.exists('data/bbox_overlap.parquet'):
+        print('calculating bounding box percent coverage for each image')  
+        _coverage_results = calculate_coverage_and_overlap(bbox_data_df)
+        _coverage_results.to_parquet('data/bbox_overlap.parquet')
+    else:
+        _coverage_results = pd.read_parquet('data/bbox_overlap.parquet')
+
+
     if not os.path.exists(_target_file):
 
     #    _image_file_list = []
     #    for _folder in tqdm(periodical_folders):
     #        _image_file_list = _image_file_list + os.listdir(os.path.join(converted_folder, _folder))
 
-        stored_image_files_df = converted_page_info #pd.DataFrame({'filename':_image_file_list})
+        stored_image_files_df = converted_page_info.copy()#pd.DataFrame({'filename':_image_file_list})
 
         stored_image_files_df['periodical_abbrev'] = stored_image_files_df['filename'].str.split('-').str[0]
         stored_image_files_df['issue_date'] = stored_image_files_df['filename'].str.extract(r'-(\d{4}-\d{2}-\d{2})')
@@ -241,9 +247,7 @@ def __(
             right_index=True
         )
 
-        #calculating percent cover of image
-        print('calculating bounding box percent coverage for each image')
-        _coverage_results = calculate_coverage_and_overlap(bbox_data_df)                                            
+        #calculating percent cover of image                                        
         file_name_to_id_map = file_name_to_id_map.merge(_coverage_results, on = 'page_id')
 
         file_name_to_id_map = file_name_to_id_map.merge(periodical_df[['id', 'abbreviation']].set_index('id'), left_on='publication_id', right_index=True)
@@ -259,6 +263,12 @@ def __(
 @app.cell
 def __(file_name_to_id_map):
     file_name_to_id_map
+    return
+
+
+@app.cell
+def __():
+    1275/1193
     return
 
 

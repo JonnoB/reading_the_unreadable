@@ -207,8 +207,14 @@ def __(convert_from_path, os, test_jpg_path, test_pdf_path_correct_names):
 
 
 
-    convert_pdf_to_jpg(test_pdf_path_correct_names, test_jpg_path, dpi=200)
+    convert_pdf_to_jpg(test_pdf_path_correct_names, test_jpg_path, dpi=120)
     return (convert_pdf_to_jpg,)
+
+
+@app.cell
+def __(test_jpg_path):
+    test_jpg_path
+    return
 
 
 @app.cell

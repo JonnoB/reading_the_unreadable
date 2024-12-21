@@ -26,6 +26,8 @@ source_folder = os.path.join('/media/jonno/ncse')
 subfolder_names = ['Northern_Star_issue_PDF_files','Leader_issue_PDF_files', 'Monthly_Repository_issue_PDF_files', 'English_Womans_Journal_issue_PDF_files', 
                    'Publishers_Circular_issue_PDF_files','Tomahawk_issue_PDF_files']
 
+subfolder_names = [ 'Tomahawk_issue_PDF_files']
+
 # Define file paths
 log_file = os.path.join(save_folder, 'conversion_log.csv')
 page_info_file = os.path.join(save_folder, 'page_size_info.parquet')

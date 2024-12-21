@@ -546,6 +546,77 @@ def adjust_x_coordinates(df):
 
 
 
+def preprocess_bbox(df, min_height = 10):
+
+    """ 
+    This function performs all the preprocessing on the bounding boxes to make them ready for sending image crops to the image-to-text model. 
+    The function assumes that the bounding boxes have been made by DocLayout-yolo. Other Yolo models may also work but this has not been tested.
+    The function is a wrapper for functions from the bbox_functions module
+    
+    Files require a page_id column which uniquely identifies each page
+    """
+    bbox_all_df = df.copy()
+    
+    bbox_all_df['width'] = bbox_all_df['x2'] - bbox_all_df['x1']
+    bbox_all_df['height'] = bbox_all_df['y2'] - bbox_all_df['y1']
+    bbox_all_df['center_x'] = bbox_all_df['width'] + bbox_all_df['x1']
+    bbox_all_df['center_y'] = bbox_all_df['height'] + bbox_all_df['y1']
+    
+    # Calculate the column width to get the total number of columns on the page
+    bbox_all_df_text = bbox_all_df.loc[bbox_all_df['class'].isin(['plain text']), ['page_id', 'width']].copy()
+    bbox_all_df_text = bbox_all_df_text.groupby('page_id')['width'].median().rename('median_box_width')
+    bbox_all_df = bbox_all_df.join(bbox_all_df_text, on = 'page_id')
+    
+    bbox_all_df = print_area_meta(bbox_all_df)
+    bbox_all_df['column_counts'] =  np.floor(bbox_all_df['print_width']/bbox_all_df['median_box_width'])
+    bbox_all_df['column_width'] = bbox_all_df['print_width']/bbox_all_df['column_counts']
+    
+    bbox_all_df = reclassify_abandon_boxes(bbox_all_df, top_fraction=0.1)
+    
+    bbox_df = bbox_all_df.loc[bbox_all_df['class']!='abandon'].copy()
+    
+    # After re-classifying boxes as abandon and dropping the abandon boxes re-calculate the print area which should have changed
+    bbox_df = print_area_meta(bbox_df)
+    
+    bbox_df = assign_columns(bbox_df)
+    
+    # change class when there is more than one column
+    bbox_df['class'] = np.where((bbox_df['column_counts']>1) & 
+                                (bbox_df['column_number']!=0) &
+                                (~bbox_df['class'].isin(['figure', 'table'])),  # Close the condition parenthesis here
+                                'plain text',  # Value if condition is True
+                                bbox_df['class'])  # Value if condition is False
+    
+    #Change class when there is only 1 column
+    bbox_df['class'] = np.where((bbox_df['column_counts']==1) & 
+                                (bbox_df['column_number']!=0) &
+                                (~bbox_df['class'].isin(['figure', 'table', 'title'])),  # Close the condition parenthesis here
+                                'plain text',  # Value if condition is True
+                                bbox_df['class'])  # Value if condition is False
+    
+    #Temporary to merge overlapping boxes
+    bbox_df= create_reading_order(bbox_df)
+    #Remove overlaps by adjusting the y2 coordinate to the subsequent bounding box
+    bbox_df = adjust_y2_coordinates(bbox_df)
+    #adjust the x limits to the column width if box is narrower than the column
+    bbox_df = adjust_x_coordinates(bbox_df)
+    
+    # Filter out boxes that are too small after y2 adjustment
+    bbox_df['height'] = bbox_df['y2'] - bbox_df['y1']  
+    bbox_df = bbox_df[bbox_df['height'] >= min_height]
+    
+    #remove small bounding boxes to make sending to LLM more efficient and result in larger text blocks
+    bbox_df = merge_boxes_within_column_width(bbox_df)
+    
+    #due to merging re-do reading order
+    bbox_df = create_reading_order(bbox_df)
+    
+    #add in bbox ID
+    bbox_df['box_page_id'] = "B" + bbox_df['page_block'].astype(str) + "C"+bbox_df['column_number'].astype(str)  + "R" + bbox_df['reading_order'].astype(str) 
+
+
+    return bbox_df
+
 
 def plot_boxes_on_image(df, image_path, figsize=(15,15), show_reading_order=False):
     # Read the image
@@ -600,7 +671,7 @@ def plot_boxes_on_image(df, image_path, figsize=(15,15), show_reading_order=Fals
                 color=color,
                 fontsize=8,
                 bbox=dict(facecolor='white', alpha=0.7))
-                
+
 
     # Add reading order arrows if requested
     if show_reading_order and 'reading_order' in df.columns:

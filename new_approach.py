@@ -52,29 +52,6 @@ def __():
 
 
 @app.cell
-def __():
-    def adjust_y2_coordinates2(df):
-        """
-        Adjusts y2 coordinates for boxes within each column of each block:
-        - Sets y2 to the y1 of the next box in reading order
-        - Removes overlaps between boxes
-        - Keeps the last box in each column unchanged
-        """
-        # Create a copy of the dataframe
-        df_adjusted = df.copy()
-
-        # Sort within groups and shift y1 values
-        df_adjusted['y22'] = (df_adjusted
-            .sort_values(['page_id', 'page_block', 'column_number', 'y1'])
-            .groupby(['page_id', 'page_block', 'column_number'])['y1']
-            .shift(-1)
-            .fillna(df_adjusted['y2']))  # Keep original y2 for last box in each group
-
-        return df_adjusted
-    return (adjust_y2_coordinates2,)
-
-
-@app.cell
 def __(
     adjust_x_coordinates,
     adjust_y2_coordinates,
@@ -93,6 +70,11 @@ def __(
     # THIS IS TEMPORARY UNTIL I DECIDE A PAGE_id convention
     bbox_all_df['page_id'] = bbox_all_df['filename']
 
+    """ 
+    Everything in this chunk below this point can be replaced in a script with the `preprocess_bbox` function.
+    The detailed code is here as this notebook is used in developement to clarify and debug the process.
+
+    """
     bbox_all_df['width'] = bbox_all_df['x2'] - bbox_all_df['x1']
     bbox_all_df['height'] = bbox_all_df['y2'] - bbox_all_df['y1']
     bbox_all_df['center_x'] = bbox_all_df['width'] + bbox_all_df['x1']
@@ -132,32 +114,19 @@ def __(
 
     #Temporary to merge overlapping boxes
     bbox_df= create_reading_order(bbox_df)
-
-
-    #bbox_df = bbox_df.loc[bbox_df['filename']=='NS2_pageid_163094_pagenum_4_1843-04-01.jpg']
-
-
-
-    before_adjust = bbox_df.copy()
+    #Remove overlaps by adjusting the y2 coordinate to the subsequent bounding box
     bbox_df = adjust_y2_coordinates(bbox_df)
-    temp = bbox_df.copy()
-
+    #adjust the x limits to the column width if box is narrower than the column
     bbox_df = adjust_x_coordinates(bbox_df)
-
+    #remove small bounding boxes to make sending to LLM more efficient and result in larger text blocks
     bbox_df = merge_boxes_within_column_width(bbox_df)
 
-
+    #due to merging re-do reading order
     bbox_df= create_reading_order(bbox_df)
 
+    #add in bbox ID
     bbox_df['box_page_id'] = "B" + bbox_df['page_block'].astype(str) + "C"+bbox_df['column_number'].astype(str)  + "R" + bbox_df['reading_order'].astype(str) 
-    return (
-        bbox_all_df,
-        bbox_all_df_text,
-        bbox_df,
-        before_adjust,
-        image_size,
-        temp,
-    )
+    return bbox_all_df, bbox_all_df_text, bbox_df, image_size
 
 
 @app.cell

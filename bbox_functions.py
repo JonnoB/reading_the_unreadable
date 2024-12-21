@@ -14,8 +14,8 @@ import numpy as np
 from numba import jit
 import os
 from tqdm import tqdm
-
-
+import cv2
+import matplotlib.pyplot as plt
 
 
 @jit(nopython=True)
@@ -234,7 +234,8 @@ def assign_columns(articles_df, width_overlap_threshold=0.1):
                     overlap_width = overlap_right - overlap_left
                     
                     # Check if overlap is substantial
-                    if overlap_width >= (column_width * width_overlap_threshold):
+                    box_width = box['x2'] - box['x1']
+                    if overlap_width >= (box_width * width_overlap_threshold):
                         box_columns.append(col_num + 1)  # 1-based column numbering
             
             # Assign column number and edges
@@ -257,61 +258,72 @@ def assign_columns(articles_df, width_overlap_threshold=0.1):
                 
     return articles_df
 
+
 def create_page_blocks(df):
     """
     Creates page blocks based on titles (column 0) and their subsequent content.
     Assigns 0 to any boxes that don't fall into a defined block.
     """
     df_sorted = df.copy()
-    
+
     # Initialize all page_blocks to 0
     df_sorted['page_block'] = 0
-    
+
     # Process each page separately
     for page_id in df_sorted['page_id'].unique():
         page_df = df_sorted[df_sorted['page_id'] == page_id]
-        
-        # Find titles (column 0)
-        titles = page_df[(page_df['column_number'] == 0) & (page_df['class'] == 'title')].sort_values('center_y')
-        
-        # For each title
-        for i, (title_idx, title_row) in enumerate(titles.iterrows(), 1):
-            # Assign block number to title
-            df_sorted.loc[title_idx, 'page_block'] = i
-            
-            # Find next title's y1 if it exists
-            next_title_y1 = float('inf')
-            if i < len(titles):
-                next_title_y1 = titles.iloc[i]['y1']
-            
-            # Find all boxes that are below this title but above next title
+
+        # Find block separators
+        block_separators = page_df[
+            (page_df['column_number'] == 0) & 
+            (page_df['class'] == 'title')
+        ].sort_values('center_y')
+
+        # For each block separator
+        for i, (separator_idx, separator_row) in enumerate(block_separators.iterrows(), 1):
+            # Assign block number to separator
+            df_sorted.loc[separator_idx, 'page_block'] = i
+
+            # Find next separator's y1 if it exists
+            next_separator_y1 = float('inf')
+            if i < len(block_separators):
+                next_separator_y1 = block_separators.iloc[i]['y1']
+
+            # Find all boxes that are below this separator but above next separator
             mask = (
                 (df_sorted['page_id'] == page_id) &
-                (df_sorted['y1'] >= title_row['y2']) &  # Below current title
-                (df_sorted['y1'] < next_title_y1) &     # Above next title
-                (df_sorted['column_number'] > 0)  &     # Not outside column structure
-                (df_sorted['class']!='title')           # Not a title
+                (df_sorted['y1'] >= separator_row['y1']) &  # Changed from y2 to y1
+                (df_sorted['y1'] < next_separator_y1)
             )
-            
+
             # Assign same block number to all boxes in this section
             df_sorted.loc[mask, 'page_block'] = i
-    
+
+        # Handle content before first block separator (assign to block 0)
+        if len(block_separators) > 0:
+            first_separator_y1 = block_separators.iloc[0]['y1']
+            initial_content_mask = (
+                (df_sorted['page_id'] == page_id) &
+                (df_sorted['y1'] < first_separator_y1)
+            )
+            df_sorted.loc[initial_content_mask, 'page_block'] = 0
+
     return df_sorted
 
-    
+
 def create_reading_order(df):
     """
     Creates reading order taking into account page blocks.
     Removes perfectly overlapping boxes keeping the one with higher confidence.
     """
     df_sorted = create_page_blocks(df)
-    
+
     # Remove perfect overlaps within same column and block
     df_cleaned = []
     for (page_id, block, col), group in df_sorted.groupby(['page_id', 'page_block', 'column_number']):
         # Sort by y1, center_y and confidence
-        group_sorted = group.sort_values(['y1', 'center_y', 'confidence'], ascending=[True, True, False])
-        
+        group_sorted = group.sort_values(['center_y', 'y1', 'confidence'], ascending=[True, True, False])
+
         # Keep track of processed boxes to remove duplicates
         kept_boxes = []
         for _, box in group_sorted.iterrows():
@@ -323,14 +335,14 @@ def create_reading_order(df):
                 (box['x2'] == kept_box['x2'])
                 for kept_box in kept_boxes
             )
-            
+
             if not is_duplicate:
                 kept_boxes.append(box)
-        
+
         df_cleaned.extend(kept_boxes)
-    
+
     df_cleaned = pd.DataFrame(df_cleaned)
-    
+
     # Create reading order for cleaned dataframe
     df_cleaned['reading_order'] = (
         df_cleaned
@@ -338,7 +350,7 @@ def create_reading_order(df):
         .groupby('page_id')
         .cumcount() + 1
     )
-    
+
     return df_cleaned.sort_index()
 
 
@@ -417,3 +429,227 @@ def merge_overlapping_boxes(df, min_overlap_percent=50):
     
     return pd.DataFrame(merged_boxes)
 
+def merge_boxes_within_column_width(df, width_multiplier=1.5):
+    """
+    Merge bounding boxes that are not 'figure' or 'table' if the merged height doesn't exceed
+    x times the column_width, maintaining reading order and working with multiple pages.
+
+    Parameters:
+    df: DataFrame with columns x1,x2,y1,y2,center_x,center_y,column_number,column_width,
+        reading_order, page_id, and type
+    width_multiplier: maximum allowed height as a multiple of column_width
+
+    Returns:
+    DataFrame with merged boxes
+    """
+    df = df.copy()
+    df = df.sort_values(['page_id', 'reading_order'])
+
+    merged_boxes = []
+
+    for page_id in df['page_id'].unique():
+        page_df = df[df['page_id'] == page_id]
+
+        # Process all columns including column 0
+        for col_num in page_df['column_number'].unique():
+            col_df = page_df[page_df['column_number'] == col_num]
+
+            current_box = None
+
+            for _, row in col_df.iterrows():
+                if row['class'] in ['figure', 'table']:
+                    if current_box is not None:
+                        merged_boxes.append(current_box)
+                        current_box = None
+                    merged_boxes.append(row.to_dict())
+                    continue
+
+                # For column 0, don't merge boxes, just add them directly
+                if col_num == 0:
+                    merged_boxes.append(row.to_dict())
+                    continue
+
+                if current_box is None:
+                    current_box = row.to_dict()
+                else:
+                    # Calculate potential merged box height
+                    merged_height = max(row['y2'], current_box['y2']) - min(row['y1'], current_box['y1'])
+
+                    # Check if merge would exceed height limit
+                    if merged_height <= row['column_width'] * width_multiplier:
+                        # Merge boxes
+                        current_box['x1'] = min(current_box['x1'], row['x1'])
+                        current_box['x2'] = max(current_box['x2'], row['x2'])
+                        current_box['y1'] = min(current_box['y1'], row['y1'])
+                        current_box['y2'] = max(current_box['y2'], row['y2'])
+                        current_box['center_x'] = (current_box['x1'] + current_box['x2']) / 2
+                        current_box['center_y'] = (current_box['y1'] + current_box['y2']) / 2
+                    else:
+                        # Add current box to results and start new one
+                        merged_boxes.append(current_box)
+                        current_box = row.to_dict()
+
+            # Add last box if exists
+            if current_box is not None:
+                merged_boxes.append(current_box)
+
+    result_df = pd.DataFrame(merged_boxes)
+    result_df = result_df.sort_values(['page_id', 'reading_order'])
+    return result_df
+
+def adjust_y2_coordinates(df):
+    """
+    Adjusts y2 coordinates for boxes within each column of each block:
+    - Sets y2 to the y1 of the next box in reading order
+    - Removes overlaps between boxes
+    - Keeps the last box in each column unchanged
+    """
+    # Create a copy of the dataframe
+    df_adjusted = df.copy()
+
+    # Sort within groups and shift y1 values
+    df_adjusted['y2'] = (df_adjusted
+        .sort_values(['page_id', 'page_block', 'column_number', 'y1'])
+        .groupby(['page_id', 'page_block', 'column_number'])['y1']
+        .shift(-1)
+        .fillna(df_adjusted['y2']))  # Keep original y2 for last box in each group
+
+    return df_adjusted
+
+
+def adjust_x_coordinates(df):
+    """
+    Adjusts x coordinates based on column boundaries (c1 and c2):
+    - If x1 > c1, sets x1 to c1
+    - If x2 < c2, sets x2 to c2
+    This extends boxes that are too narrow but preserves wider boxes.
+    Boxes with class 'figure' are not adjusted.
+    """
+    df_adjusted = df.copy()
+
+    # Ensure c1 and c2 are float64
+    df_adjusted['c1'] = df_adjusted['c1'].astype('float64')
+    df_adjusted['c2'] = df_adjusted['c2'].astype('float64')
+
+    # Create mask for non-figure boxes
+    non_figure_mask = df_adjusted['class'] != 'figure'
+
+    # Adjust x1 where it's greater than c1 (excluding figures)
+    mask_x1 = (df_adjusted['x1'] > df_adjusted['c1']) & non_figure_mask
+    df_adjusted.loc[mask_x1, 'x1'] = df_adjusted.loc[mask_x1, 'c1'].astype('float64')
+
+    # Adjust x2 where it's less than c2 (excluding figures)
+    mask_x2 = (df_adjusted['x2'] < df_adjusted['c2']) & non_figure_mask
+    df_adjusted.loc[mask_x2, 'x2'] = df_adjusted.loc[mask_x2, 'c2'].astype('float64')
+
+    return df_adjusted
+
+
+
+
+def plot_boxes_on_image(df, image_path, figsize=(15,15), show_reading_order=False):
+    # Read the image
+    image = cv2.imread(image_path)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
+
+    # Create figure and axes
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # Display the image
+    ax.imshow(image)
+
+    # Define fixed colors for specific classes
+    fixed_colors = {
+        'plain text': '#FF0000',  # Red
+        'title': '#00FF00',       # Green
+        'figure': '#0000FF'       # Blue
+    }
+
+    # Create a color map for any other classes
+    unique_classes = [cls for cls in df['class'].unique() if cls not in fixed_colors]
+    if unique_classes:  # If there are other classes
+        additional_colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_classes)))
+        additional_color_dict = dict(zip(unique_classes, additional_colors))
+    else:
+        additional_color_dict = {}
+
+    # Combine fixed and additional colors
+    class_color_dict = {**fixed_colors, **additional_color_dict}
+
+    # Plot each bounding box
+    for idx, row in df.iterrows():
+        x1, y1, x2, y2 = row['x1'], row['y1'], row['x2'], row['y2']
+        box_class = row['class']
+
+        # Create rectangle patch
+        width = x2 - x1
+        height = y2 - y1
+
+        # Get color for this class
+        color = class_color_dict[box_class]
+
+        # Draw rectangle
+        rect = plt.Rectangle((x1, y1), width, height,
+                           fill=False,
+                           color=color,
+                           linewidth=2)
+        ax.add_patch(rect)
+
+        # Optionally add class labels
+        ax.text(x1, y1-5, box_class, 
+                color=color,
+                fontsize=8,
+                bbox=dict(facecolor='white', alpha=0.7))
+                
+
+    # Add reading order arrows if requested
+    if show_reading_order and 'reading_order' in df.columns:
+        # Sort by reading order
+        df_sorted = df.sort_values('reading_order')
+
+        # Calculate center points
+        df_sorted['center_x'] = (df_sorted['x1'] + df_sorted['x2']) / 2
+        df_sorted['center_y'] = (df_sorted['y1'] + df_sorted['y2']) / 2
+
+        # Draw arrows between consecutive boxes
+        for i in range(len(df_sorted)-1):
+            start = (df_sorted.iloc[i]['center_x'], df_sorted.iloc[i]['center_y'])
+            end = (df_sorted.iloc[i+1]['center_x'], df_sorted.iloc[i+1]['center_y'])
+
+            ax.annotate('',
+                       xy=end,
+                       xytext=start,
+                       arrowprops=dict(arrowstyle='->',
+                                     color='black',
+                                     linewidth=2,
+                                     mutation_scale=20),  # Makes the arrow head bigger
+                       )
+
+    # Remove axes
+    ax.set_axis_off()
+
+    # Add legend
+    legend_elements = [plt.Rectangle((0,0),1,1, facecolor=color, 
+                                   label=class_name)
+                      for class_name, color in class_color_dict.items()]
+    ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
+
+    plt.tight_layout()
+    return fig  # Return the figure instead of showing it
+
+# And then the loop function would be:
+def save_plots_for_all_files(df, image_dir, output_dir, figsize=(15,15), show_reading_order = False):
+    os.makedirs(output_dir, exist_ok=True)
+    unique_images = df['filename'].unique()
+
+    for filename in tqdm(unique_images, desc="Processing images"):
+        image_df = df[df['filename'] == filename]
+        image_path = os.path.join(image_dir, filename)
+
+        # Get the figure from plot_boxes_on_image
+        fig = plot_boxes_on_image(image_df, image_path, figsize=figsize, show_reading_order = show_reading_order)
+
+        # Save the figure
+        output_path = os.path.join(output_dir, f'annotated_{filename}')
+        fig.savefig(output_path, bbox_inches='tight', dpi=300)
+        plt.close(fig)  # Close the figure to free memory

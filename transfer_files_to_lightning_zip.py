@@ -10,11 +10,11 @@ from lightning_sdk import Studio
 
 studio = Studio(name="doclayout-yolo", teamspace="Language-model", user="ucabbou")
 total_root = "data/ncse_test_jpg/"
-total_root = "/media/jonno/ncse/converted/all_files_png_120"
+total_root = "/media/jonno/ncse/converted/all_files_png_200"
 
 files = os.listdir(total_root)
 zip_files = [f for f in files if f.endswith('.zip')]
-zip_files = ['English_Womans_Journal_issue_PDF_files.zip', 'Tomahawk_issue_PDF_files.zip']
+#zip_files = ['English_Womans_Journal_issue_PDF_files.zip', 'Tomahawk_issue_PDF_files.zip']
 
 print(f'zip files identified {zip_files}')
 for zip_file in zip_files:

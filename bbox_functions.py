@@ -556,9 +556,12 @@ def preprocess_bbox(df, min_height = 10):
     Files require a page_id column which uniquely identifies each page
     """
     bbox_all_df = df.copy()
+
+    bbox_all_df['issue'] = bbox_all_df['filename'].str.split('_page_').str[0]
     
     bbox_all_df['width'] = bbox_all_df['x2'] - bbox_all_df['x1']
     bbox_all_df['height'] = bbox_all_df['y2'] - bbox_all_df['y1']
+    bbox_all_df['ratio'] = bbox_all_df['height']/bbox_all_df['width']  
     bbox_all_df['center_x'] = bbox_all_df['width'] + bbox_all_df['x1']
     bbox_all_df['center_y'] = bbox_all_df['height'] + bbox_all_df['y1']
     
@@ -613,7 +616,7 @@ def preprocess_bbox(df, min_height = 10):
     
     #add in bbox ID
     bbox_df['box_page_id'] = "B" + bbox_df['page_block'].astype(str) + "C"+bbox_df['column_number'].astype(str)  + "R" + bbox_df['reading_order'].astype(str) 
-
+    bbox_all_df['ratio'] = bbox_all_df['height']/bbox_all_df['width']  
 
     return bbox_df
 

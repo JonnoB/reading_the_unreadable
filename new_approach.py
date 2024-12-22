@@ -125,7 +125,7 @@ def __(
     bbox_df= create_reading_order(bbox_df)
 
     #add in bbox ID
-    bbox_df['box_page_id'] = "B" + bbox_df['page_block'].astype(str) + "C"+bbox_df['column_number'].astype(str)  + "R" + bbox_df['reading_order'].astype(str) 
+    bbox_df['box_page_id'] = "B" + bbox_df['page_block'].astype(str) + "C"+bbox_df['column_number'].astype(str)  + "R" + bbox_df['reading_order'].astype(str)
     return bbox_all_df, bbox_all_df_text, bbox_df, image_size
 
 
@@ -173,7 +173,6 @@ def __(bbox_df, os, plot_boxes_on_image):
 
 @app.cell
 def __():
-
     """
     save_plots_for_all_files(bbox_df, 
                              image_dir = 'data/ncse_test_jpg', 

@@ -8,19 +8,19 @@ import numpy as np
 import datetime 
 import time 
 from tqdm import tqdm
+import cv2
 
 import base64
 import difflib
-import time
 import os
 from datetime import datetime
 import litellm
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 import wand.image
+import json
 from PIL import Image
 from io import BytesIO
-from tqdm import tqdm
 import re
 from numba import jit
 
@@ -215,87 +215,7 @@ def initialize_log_file(output_folder):
         log_df = pd.DataFrame(columns=['file_name', 'processing_time', 'input_tokens', 'output_tokens', 'total_tokens', 'sub_images', 'status', 'timestamp'])
     return log_file_path, log_df
 
-def load_image(file_path, deskew, output_folder):
-    """
-    Load and optionally deskew an image file.
-    This function was originally created to handle images that were a 
-    single image only.
 
-    Args:
-        file_path (str): Path to the image file to be loaded.
-        deskew (bool): Whether to apply deskewing to the image.
-        output_folder (str): Path to store temporary files during deskewing.
-
-    Returns:
-        PIL.Image: Loaded (and potentially deskewed) image object.
-    """
-    if deskew:
-        with wand.image.Image(filename=file_path) as wand_img:
-
-            #The save and load is annoying but necessary as it isn't possible to convert between wand and PIL
-            #Maybe can be re-done using the deskew library?
-            wand_img.deskew(0.4 * wand_img.quantum_range)
-            temp_path = os.path.join(output_folder, f"temp_deskewed_{os.path.basename(file_path)}")
-            wand_img.save(filename=temp_path)
-            img = Image.open(temp_path)
-            os.remove(temp_path)
-    else:
-        img = Image.open(file_path)
-    return img
-
-def process_image_segments(segments, prompt):
-    """
-    Process multiple image segments and aggregate their results.
-
-    Args:
-        segments (list): List of image segments to process.
-        prompt (str): The prompt to use for image processing.
-
-    Returns:
-        tuple: A tuple containing:
-            - list: Processed content for each segment
-            - int: Total input tokens used
-            - int: Total output tokens used
-            - int: Total tokens used
-            - int: Number of segments processed
-    """
-    content_list = []
-    total_input_tokens = total_output_tokens = total_tokens = 0
-
-    for i, segment in enumerate(segments):
-        segment_content, usage = process_segment(segment, prompt)
-        if segment_content and usage:
-            content_list.append(segment_content)
-            input_tokens, output_tokens, segment_total_tokens = usage
-            total_input_tokens += input_tokens
-            total_output_tokens += output_tokens
-            total_tokens += segment_total_tokens
-
-    return content_list, total_input_tokens, total_output_tokens, total_tokens, len(segments)
-
-
-def process_segment(segment, prompt):
-    """
-    Process a single image segment using the API.
-
-    Args:
-        segment (PIL.Image): Image segment to process.
-        prompt (str): The prompt to use for image processing.
-
-    Returns:
-        tuple: A tuple containing:
-            - str: Processed content from the segment
-            - tuple or None: Token usage statistics (input_tokens, output_tokens, total_tokens)
-    """
-    buffered = BytesIO()
-    segment.save(buffered, format="JPEG")
-    image_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
-    try:
-        segment_content, usage = process_image_with_api(image_base64, prompt=prompt)
-    except Exception as e:
-        print(f"Error in process_image_with_api for segment: {str(e)}")
-        segment_content, usage = None, None
-    return segment_content, usage
 
 def save_text_output(output_folder, filename, content_list):
     """
@@ -345,49 +265,363 @@ def update_log(log_df, filename, processing_time, total_input_tokens, total_outp
 
 
 
-def process_jpeg_folder(folder_path, output_folder, prompt, max_ratio=1.5, overlap_fraction=0.1, deskew=True):
+def save_encoded_images(encoded_images, output_folder):
     """
-    This functions images one at a time. It needs to be replaced with a function that can send to the batch API.
-    It is only here to be replaced
+    Save base64-encoded images to files.
 
-    Process all JPEG images in a folder and generate text output. Assumes that the articles have already 
-    been clipped. Sends each image to the server one at a time.
-
-    Args:
-        folder_path (str): Path to the folder containing JPEG images.
-        output_folder (str): Path to store processed outputs and logs.
-        prompt (str): The prompt to use for image processing.
-        max_ratio (float, optional): Maximum aspect ratio for image segments. Defaults to 1.5.
-        overlap_fraction (float, optional): Fraction of overlap between segments. Defaults to 0.1.
-        deskew (bool, optional): Whether to apply deskewing to images. Defaults to True.
+    Parameters:
+    -----------
+    encoded_images : dict
+        Dictionary with keys as image identifiers and values as base64-encoded PNG strings
+    output_folder : str
+        Path to folder where images should be saved
 
     Returns:
-        pandas.DataFrame: Complete log of all processed files.
+    --------
+    list
+        List of saved file paths
     """
+    # Create output folder if it doesn't exist
     os.makedirs(output_folder, exist_ok=True)
-    log_file_path, log_df = initialize_log_file(output_folder)
+    saved_paths = []
 
-    for filename in tqdm(os.listdir(folder_path)):
-        if filename.lower().endswith(('.jpg', '.jpeg', '.png')) and filename not in log_df[log_df['status'] == 'Success']['file_name'].values:
-            file_path = os.path.join(folder_path, filename)
-            start_time = time.time()
+    for key, encoded_string in encoded_images.items():
+        try:
+            # Decode base64 string
+            img_data = base64.b64decode(encoded_string)
+            
+            # Create file path
+            file_path = os.path.join(output_folder, f"{key}.png")
+            
+            # Save image
+            with open(file_path, 'wb') as f:
+                f.write(img_data)
+            
+            saved_paths.append(file_path)
+            
+        except Exception as e:
+            print(f"Error saving image {key}: {str(e)}")
+            continue
+    
+    print(f"Saved {len(saved_paths)} images to {output_folder}")
+    return saved_paths
 
+
+
+def crop_and_encode_boxes(df, images_folder, max_ratio=1.5, overlap_fraction=0.2, deskew=True):
+    """
+    Crop bounding boxes from images and return them as base64-encoded PNG strings.
+
+    The function processes images in three ways:
+    1. Tall images (ratio > max_ratio): Split into multiple overlapping segments
+    2. Wide images (ratio < 1): Padded with white borders to make square
+    3. Normal images (1 ≤ ratio ≤ max_ratio): Encoded as-is
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame containing columns: 'filename', 'page_id', 'x1', 'x2', 'y1', 'y2', 
+        'box_page_id', 'ratio'
+    images_folder : str
+        Path to folder containing the original images
+    max_ratio : float, optional (default=1.5)
+        Maximum height/width ratio before splitting image
+    overlap_fraction : float, optional (default=0.2)
+        Fraction of overlap between segments for tall images
+    deskew : bool, optional (default=True)
+        Whether to apply deskewing to the cropped images
+
+    Returns:
+    --------
+    dict
+        Keys: '{page_id}_{box_page_id}_segment_{i}'
+        Values: base64-encoded PNG strings
+        where i=0 for non-split images and i=0,1,2,... for split images
+
+    Notes:
+    ------
+    - All images are processed in memory (no files are saved to disk)
+    - Skips invalid or empty crops with warning messages
+    - All images are encoded as PNG format for better quality
+    """
+    encoded_images = {}
+
+    for filename, group in df.groupby('filename'):
+        image_path = os.path.join(images_folder, filename)
+        image = cv2.imread(image_path)
+
+        if image is None:
+            print(f"Could not read image: {image_path}")
+            continue
+
+        height, width = image.shape[:2]
+
+        for _, row in group.iterrows():
             try:
-                img = load_image(file_path, deskew, output_folder)
-                segments = split_image(img, max_ratio, overlap_fraction)
-                content_list, total_input_tokens, total_output_tokens, total_tokens, sub_images = process_image_segments(segments, prompt)
-                save_text_output(output_folder, filename, content_list)
-                status = 'Success'
+                # [Previous coordinate extraction code remains the same]
+                x1 = max(0, int(row['x1']))
+                y1 = max(0, int(row['y1']))
+                x2 = min(width, int(row['x2']))
+                y2 = min(height, int(row['y2']))
+
+                if x2 <= x1 or y2 <= y1:
+                    print(f"Invalid coordinates for box {row['box_page_id']} in {filename}")
+                    continue
+
+                # Crop the image
+                cropped = image[y1:y2, x1:x2]
+
+                if cropped.size == 0:
+                    print(f"Empty crop for box {row['box_page_id']} in {filename}")
+                    continue
+
+                # Convert to PIL Image for processing
+                cropped_pil = Image.fromarray(cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB))
+
+                # Apply deskewing if requested
+                if deskew:
+                    # Save PIL image to bytes buffer
+                    buffer = BytesIO()
+                    cropped_pil.save(buffer, format='PNG')
+                    buffer.seek(0)
+                    
+                    # Deskew using Wand
+                    with wand.image.Image(blob=buffer.getvalue()) as wand_img:
+                        wand_img.deskew(0.4 * wand_img.quantum_range)
+                        # Convert back to PIL
+                        deskewed_buffer = BytesIO(wand_img.make_blob('PNG'))
+                        cropped_pil = Image.open(deskewed_buffer)
+
+                # Check if the row is a figure
+                is_figure = row.get('class') == 'figure'
+
+                if is_figure:
+                    # Process figures as-is without any ratio modifications
+                    key = f"{row['page_id']}_{row['box_page_id']}_segment_0"
+                    buffered = BytesIO()
+                    cropped_pil.save(buffered, format="PNG")
+                    encoded_images[key] = base64.b64encode(buffered.getvalue()).decode('utf-8')
+                else:
+                    # Get dimensions of cropped image
+                    crop_height, crop_width = cropped.shape[:2]
+                    ratio = crop_height / crop_width
+
+                    if ratio > max_ratio:
+                        # Split tall images
+                        segments = split_image(cropped_pil, max_ratio, overlap_fraction)
+                        for i, segment in enumerate(segments):
+                            key = f"{row['page_id']}_{row['box_page_id']}_segment_{i}"
+                            buffered = BytesIO()
+                            segment.save(buffered, format="PNG")
+                            encoded_images[key] = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+                    elif ratio < 1:
+                        # Pad wide images to make them square
+                        diff = crop_width - crop_height
+                        top_padding = diff // 2
+                        bottom_padding = diff - top_padding
+                        padded = cv2.copyMakeBorder(
+                            cropped,
+                            top_padding,
+                            bottom_padding,
+                            0,
+                            0,
+                            cv2.BORDER_CONSTANT,
+                            value=[255, 255, 255]  # white padding
+                        )
+                        # Convert to PIL Image
+                        padded_pil = Image.fromarray(cv2.cvtColor(padded, cv2.COLOR_BGR2RGB))
+                        key = f"{row['page_id']}_{row['box_page_id']}_segment_0"
+                        buffered = BytesIO()
+                        padded_pil.save(buffered, format="PNG")
+                        encoded_images[key] = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+                    else:
+                        # Process images with acceptable ratios as-is
+                        key = f"{row['page_id']}_{row['box_page_id']}_segment_0"
+                        buffered = BytesIO()
+                        cropped_pil.save(buffered, format="PNG")
+                        encoded_images[key] = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
             except Exception as e:
-                print(f"Processing failed for {filename}: {str(e)}")
-                total_input_tokens = total_output_tokens = total_tokens = sub_images = 0
-                status = 'Failed'
-            finally:
-                if 'img' in locals():
-                    img.close()
+                print(f"Error processing box {row['box_page_id']} in {filename}: {str(e)}")
+                continue
 
-            processing_time = time.time() - start_time
-            log_df = update_log(log_df, filename, processing_time, total_input_tokens, total_output_tokens, total_tokens, sub_images, status)
-            log_df.to_csv(log_file_path, index=False)
+    return encoded_images
 
-    return log_df
+
+    
+def create_jsonl_content(encoded_images, prompt):
+    """
+    Create JSONL content as a string for file upload.
+
+    Parameters:
+    encoded_images: dict with keys as image IDs and values as base64-encoded strings
+    prompt: str, the prompt to use for all images
+
+    Returns:
+    str: The JSONL content as a string
+    """
+    jsonl_lines = []
+    for image_id, image_base64 in encoded_images.items():
+        entry = {
+            "custom_id": image_id,
+            "body": {
+                "max_tokens": 100,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": prompt
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": f"data:image/png;base64,{image_base64}"
+                            }
+                        ]
+                    }
+                ]
+            }
+        }
+        jsonl_lines.append(json.dumps(entry))
+
+    return '\n'.join(jsonl_lines)
+
+
+def create_batch_job(client, bbox_df, encoded_images, prompt):
+    """
+    Create a batch job and return job details including original filename information.
+
+    Args:
+        client: Mistral client instance
+        bbox_df: DataFrame containing issue information
+        encoded_images: Encoded image data
+        prompt: Prompt template
+
+    Returns:
+        tuple: (job_id, original_filename)
+    """
+    # Get the base filename from the issue
+    base_filename = bbox_df['issue'].unique()[0]
+    temp_file_path = f"temp_{base_filename}.jsonl"
+    target_filename = f"{base_filename}.jsonl"  # The final filename we want
+
+    try:
+        # Write the JSONL content to the temporary file
+        jsonl_content = create_jsonl_content(encoded_images, prompt)
+        with open(temp_file_path, 'w') as f:
+            f.write(jsonl_content)
+
+        # Upload the file
+        with open(temp_file_path, 'rb') as f:
+            batch_data = client.files.upload(
+                file={
+                    "file_name": f"{base_filename}.jsonl",
+                    "content": f
+                },
+                purpose="batch"
+            )
+
+        # Create the job with metadata including the target filename
+        created_job = client.batch.jobs.create(
+            input_files=[batch_data.id],
+            model="pixtral-12b-2409",
+            endpoint="/v1/chat/completions",
+            metadata={
+                "job_type": "testing",
+                "target_filename": target_filename  # Store the target filename in metadata
+            }
+        )
+
+        return created_job.id, target_filename
+
+    finally:
+        # Clean up temporary file
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+
+
+def process_pages_to_jobs(bbox_df, images_folder, prompt ,client, output_file='processed_jobs.csv'):
+    """
+    Process pages one at a time, creating batch jobs for OCR processing
+    
+    Parameters:
+    bbox_df (DataFrame): DataFrame containing bounding box information
+    images_folder (str): Path to folder containing images
+    client: API client instance
+    output_file (str): Path to CSV file storing job information
+    
+    Returns:
+    DataFrame: DataFrame containing job_ids and target filenames
+    """
+    # Check if output file exists and load it
+    try:
+        existing_jobs_df = pd.read_csv(output_file)
+        print(f"Loaded existing jobs file with {len(existing_jobs_df)} records")
+    except FileNotFoundError:
+        existing_jobs_df = pd.DataFrame(columns=['page_id', 'job_id', 'target_filename'])
+        print("Creating new jobs tracking file")
+    
+    # Get unique page_ids
+    unique_pages = bbox_df['page_id'].unique()
+    
+    # Counter for saving frequency
+    processed_since_save = 0
+    
+    for page_id in unique_pages:
+        # Filter bbox_df for current page
+        page_df = bbox_df[bbox_df['page_id'] == page_id]
+        
+        # Check if this page has already been processed
+        if page_id in existing_jobs_df['page_id'].values:
+            print(f"Skipping page_id {page_id} - already processed")
+            continue
+        
+        try:
+            # Encode images for this page
+            encoded_images = crop_and_encode_boxes(
+                df=page_df,
+                images_folder=images_folder,
+                max_ratio=1,
+                overlap_fraction=0.2,
+                deskew=True
+            )
+            
+            # Create batch job
+            job_id, target_filename = create_batch_job(
+                client, 
+                page_df, 
+                encoded_images, 
+                prompt
+            )
+            
+            # Add results to DataFrame
+            new_row = pd.DataFrame({
+                'page_id': [page_id],
+                'job_id': [job_id],
+                'target_filename': [target_filename]
+            })
+            existing_jobs_df = pd.concat([existing_jobs_df, new_row], ignore_index=True)
+            
+            # Save to file every 5 processed pages
+            processed_since_save += 1
+            if processed_since_save >= 5:
+                existing_jobs_df.to_csv(output_file, index=False)
+                processed_since_save = 0
+                print(f"Saved progress to {output_file}")
+            
+            print(f"Successfully processed page_id {page_id}")
+            
+        except Exception as e:
+            print(f"Error processing page_id {page_id}: {str(e)}")
+            # Save progress in case of error
+            existing_jobs_df.to_csv(output_file, index=False)
+            continue
+    
+    # Final save
+    existing_jobs_df.to_csv(output_file, index=False)
+    print(f"Processing complete. Final results saved to {output_file}")
+    
+    return existing_jobs_df

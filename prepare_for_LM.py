@@ -70,7 +70,7 @@ def __(os, pd, preprocess_bbox):
     output_folder = "data/leader_test_cropped"
 
 
-    bbox_df = pd.read_parquet('data/periodical_bboxes/Leader_issue_PDF_files_1056.parquet')
+    bbox_df = pd.read_parquet('data/periodical_bboxes/raw/Leader_issue_PDF_files_1056.parquet')
     # Just subsetting to test issues of the leader to make sure the process works as expected
     test_issues = os.listdir(folder_path)
 
@@ -79,7 +79,7 @@ def __(os, pd, preprocess_bbox):
 
     bbox_df['page_id'] = bbox_df['filename'].str.replace('.png', "")
 
-    bbox_df = preprocess_bbox(bbox_df, 5)
+    bbox_df = preprocess_bbox(bbox_df, 10)
 
     # All the preprossing of the data should be done in a single step and saved as it is probably quite slow.
     return bbox_df, folder_path, output_folder, test_issues

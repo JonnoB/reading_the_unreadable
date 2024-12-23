@@ -125,32 +125,6 @@ def print_area_meta(df):
     return df
      
 
-def reclassify_abandon_boxes_broken(df, top_fraction=0.1):
-    # Calculate the threshold line from the top of the printed area for each page
-    threshold_line = df['print_y1'] + (df['print_height'] * top_fraction)
-    
-    # Find maximum y2 of abandon boxes above threshold for each page
-    abandon_lines = (
-        df[df['class'] == 'abandon']
-        .loc[df['y1'] <= threshold_line]
-        .groupby('page_id')['y2']
-        .max()
-    )
-    
-    # Create abandon_line column using threshold as default where no abandon boxes exist
-    df['abandon_line'] = df['page_id'].map(abandon_lines).fillna(
-        threshold_line
-    )
-    
-    # Reclassify all boxes whose center_y is above the abandon line
-    df['class'] = np.where(
-        df['center_y'] <= df['abandon_line'],
-        'abandon',
-        df['class']
-    )
-    
-    return df
-
 def reclassify_abandon_boxes(df, top_fraction=0.1):
     # Calculate the threshold line from the top of the printed area for each page
     threshold_line = df['print_y1'] + (df['print_height'] * top_fraction)
@@ -185,11 +159,6 @@ def reclassify_abandon_boxes(df, top_fraction=0.1):
     return df
 
 
-# Example usage:
-# df = reclassify_abandon_boxes(df, top_fraction=0.1)
-# Example usage:
-# df = process_all_pages(df, top_fraction=0.1)
-
 
 def assign_columns(articles_df, width_overlap_threshold=0.1):
     """
@@ -203,11 +172,15 @@ def assign_columns(articles_df, width_overlap_threshold=0.1):
     articles_df['c1'] = None  # Left column edge
     articles_df['c2'] = None  # Right column edge
     
-    for page_id in articles_df['page_id'].unique():
+    for page_id in tqdm(articles_df['page_id'].unique(), desc="Assigning article columns in pages"):
         # Get print area info for this page from the first row of the page
         page_articles = articles_df[articles_df['page_id'] == page_id]
         page_info = page_articles.iloc[0]
         
+        #fills NA values with 1, this prevents issues later in this function...
+        # I hope it doesn't have some crazy knock on effect
+        articles_df['column_counts'] = articles_df['column_counts'].fillna(1)
+
         # Calculate column width and boundaries
         column_width = page_info['print_width'] / page_info['column_counts']
         column_bins = np.linspace(
@@ -447,7 +420,7 @@ def merge_boxes_within_column_width(df, width_multiplier=1.5):
 
     merged_boxes = []
 
-    for page_id in df['page_id'].unique():
+    for page_id in tqdm(df['page_id'].unique(), desc="Merging pages"):
         page_df = df[df['page_id'] == page_id]
 
         # Process all columns including column 0

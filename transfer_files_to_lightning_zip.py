@@ -1,8 +1,14 @@
 """ 
+This script transfers a folder of compressed NCSE image files to a lightning.ai studio to run DocLayout-Yolo on.
+To use this script you need to have your lightnint user_id and API key in the .env file.
+See lightning documentation  for details.
+
 The asyncio cannot be run from within marimo as it causes a nested loop issue
 This can be got around but it is easier just to do this as a script
 
-Leader start time 0723 2024/12/21
+
+Adjust the details below such as , 'name', 'teamspace', 'user', and 'total_root', to you use case.
+
 """
 
 import os
@@ -10,11 +16,11 @@ from lightning_sdk import Studio
 
 studio = Studio(name="doclayout-yolo", teamspace="Language-model", user="ucabbou")
 total_root = "data/ncse_test_jpg/"
-total_root = "/media/jonno/ncse/converted/all_files_png_200"
+total_root = "/media/jonno/ncse/converted/all_files_png_120"
 
 files = os.listdir(total_root)
 zip_files = [f for f in files if f.endswith('.zip')]
-#zip_files = ['English_Womans_Journal_issue_PDF_files.zip', 'Tomahawk_issue_PDF_files.zip']
+zip_files = ['Publishers_Circular_issue_PDF_files.zip']
 
 print(f'zip files identified {zip_files}')
 for zip_file in zip_files:

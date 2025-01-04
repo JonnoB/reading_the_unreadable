@@ -1,17 +1,17 @@
 import marimo
 
-__generated_with = "0.9.18"
+__generated_with = "0.10.6"
 app = marimo.App(width="medium")
 
 
 @app.cell
-def __():
+def _():
     import marimo as mo
     return (mo,)
 
 
 @app.cell
-def __(mo):
+def _(mo):
     mo.md(
         r"""
         # The process for preparing images with bounding boxes for sending to Pixtral
@@ -35,8 +35,8 @@ def __(mo):
     return
 
 
-app._unparsable_cell(
-    r"""
+@app.cell
+def _():
     import pandas as pd
     import numpy as np
     import os
@@ -50,89 +50,112 @@ app._unparsable_cell(
 
     from mistralai import Mistral
 
-    api_key = os.environ[\"MISTRAL_API_KEY\"]
+    api_key = os.environ["MISTRAL_API_KEY"]
 
     client = Mistral(api_key=api_key)
 
 
     from bbox_functions import preprocess_bbox, save_plots_for_all_files
-    from send_to_lm_functions import (split_image, crop_and_encode_boxes, create_jsonl_content,  process_pages_to_jobs
-    save_encoded_images)
-    """,
-    name="__"
-)
+    from send_to_lm_functions import (split_image, crop_and_encode_boxes, create_jsonl_content,
+    save_encoded_images, process_issues_to_jobs)
+    return (
+        BytesIO,
+        Image,
+        Mistral,
+        Path,
+        api_key,
+        base64,
+        client,
+        create_jsonl_content,
+        crop_and_encode_boxes,
+        cv2,
+        json,
+        np,
+        os,
+        pd,
+        preprocess_bbox,
+        process_issues_to_jobs,
+        save_encoded_images,
+        save_plots_for_all_files,
+        split_image,
+        wand,
+    )
 
 
 @app.cell
-def __(os, pd, preprocess_bbox):
-    folder_path = 'data/leader_test_issue/'
+def _(os, pd):
+    images_folder = '/media/jonno/ncse/converted/all_files_png_120/Leader_issue_PDF_files'#'data/leader_test_issue/'
 
     output_folder = "data/leader_test_cropped"
 
 
-    bbox_df = pd.read_parquet('data/periodical_bboxes/raw/Leader_issue_PDF_files_1056.parquet')
+    bbox_df = pd.read_parquet('data/periodical_bboxes/post_process/Leader_issue_PDF_files_1040.parquet')
     # Just subsetting to test issues of the leader to make sure the process works as expected
-    test_issues = os.listdir(folder_path)
+    test_issues = os.listdir(images_folder)
 
     # Just the subset of the files in the test set
-    bbox_df = bbox_df.loc[bbox_df['filename'].isin(test_issues)]
+    #bbox_df = bbox_df.loc[bbox_df['filename'].isin(test_issues)]
 
-    bbox_df['page_id'] = bbox_df['filename'].str.replace('.png', "")
+    #bbox_df['page_id'] = bbox_df['filename'].str.replace('.png', "")
 
-    bbox_df = preprocess_bbox(bbox_df, 10)
 
     # All the preprossing of the data should be done in a single step and saved as it is probably quite slow.
-    return bbox_df, folder_path, output_folder, test_issues
+    return bbox_df, images_folder, output_folder, test_issues
 
 
 @app.cell
-def __(bbox_df):
+def _(bbox_df):
     bbox_df.columns
     return
 
 
 @app.cell
-def __(bbox_df):
+def _(pd):
+    issues_df = pd.read_parquet('data/periodicals_issue.parquet')
+
+    print(issues_df.shape)
+    issues_df.groupby('publication_id').size()
+    return (issues_df,)
+
+
+@app.cell
+def _():
+    4263/(60*24)
+    return
+
+
+@app.cell
+def _(bbox_df):
     bbox_df
     return
 
 
 @app.cell
-def __(bbox_df, client, images_folder, process_pages_to_jobs, prompt):
-    process_pages_to_jobs(bbox_df, images_folder, prompt ,client, output_file='data/leader_processed_jobs.csv')
+def _(bbox_df):
+    (bbox_df.groupby('class').size()/bbox_df.shape[0]).round(2)
     return
 
 
 @app.cell
-def __(
-    bbox_df,
-    client,
-    create_batch_job,
-    crop_and_encode_boxes,
-    folder_path,
-):
-    # Run the cropping function
-    encoded_images = crop_and_encode_boxes( df = bbox_df, 
-                                            images_folder = folder_path, 
-                                            max_ratio = 1, 
-                                            overlap_fraction= 0.2, 
-                                            deskew = True )
-
-    prompt =  "You are an expert at transcription. The text is from a 19th century English newspaper. Please transcribe exactly, including linebreaks, the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only."
-
-
-    job_id, target_filename = create_batch_job(client, bbox_df, encoded_images, prompt)
-    return encoded_images, job_id, prompt, target_filename
+def _():
+    prompt_dict = {'plain text':"You are an expert at transcription. The text is from a 19th century English newspaper. Please transcribe exactly, including linebreaks, the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only.",
+                  'figure':'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
+                  'table':'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'}
+    return (prompt_dict,)
 
 
 @app.cell
-def __(job_id):
-    job_id
+def _():
+
+    """
+    process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, 
+                           output_file='data/processed_jobs/Leader_issue_PDF_files.csv')
+    """
     return
 
 
 @app.cell
-def __(json):
+def _(json):
     def get_completed_job_ids(client, job_type="testing"):
         """
         Get IDs of all successfully completed batch jobs.
@@ -186,38 +209,38 @@ def __(json):
 
 
 @app.cell
-def __(client, get_completed_job_ids, json, process_mistral_responses):
-    completed_ids = get_completed_job_ids(client)
+def _(mo):
+    mo.md(
+        """
+        completed_ids = get_completed_job_ids(client)
 
-    # need to then check against log of retrieved and stored jobs
-
-
-    # Here if the completed id has not already been downloaded and stored retrieve the job
-    retrieved_job = client.batch.jobs.get(job_id=completed_ids[0])
-    # use the output file id to download the file
-    response = client.files.download(file_id=retrieved_job.output_file)
-    parsed_data = process_mistral_responses(response)
-
-    # I need to work out how to get the original file name here
-    #Save the file with the issue code
-    with open('data/output.json', 'w', encoding='utf-8') as f:
-        json.dump(parsed_data, f, indent=2, ensure_ascii=False)
-    return completed_ids, f, parsed_data, response, retrieved_job
+        # need to then check against log of retrieved and stored jobs
 
 
-@app.cell
-def __(completed_ids):
-    completed_ids
+        # Here if the completed id has not already been downloaded and stored retrieve the job
+        retrieved_job = client.batch.jobs.get(job_id=completed_ids[0])
+        # use the output file id to download the file
+        response = client.files.download(file_id=retrieved_job.output_file)
+        parsed_data = process_mistral_responses(response)
+
+        # I need to work out how to get the original file name here
+        #Save the file with the issue code
+        with open('data/output.json', 'w', encoding='utf-8') as f:
+            json.dump(parsed_data, f, indent=2, ensure_ascii=False)
+        """
+    )
     return
 
 
 @app.cell
-def __():
+def _():
     return
 
 
 @app.cell
-def __(parsed_data):
+def _():
+
+    """
     # Usage:
      # Your original data
 
@@ -230,35 +253,13 @@ def __(parsed_data):
         print(f"Content: {content}\n")
 
     # If you want to save to a file:
-    return content, custom_id, item
 
-
-@app.cell
-def __(data):
-    data
+    """
     return
 
 
 @app.cell
-def __(response):
-    help(response)
-    return
-
-
-@app.cell
-def __(encoded_images, save_encoded_images):
-    save_encoded_images(encoded_images, output_folder = 'data/leader_test_cropped/')
-    return
-
-
-@app.cell
-def __(bbox_df):
-    bbox_df.columns
-    return
-
-
-@app.cell
-def __():
+def _():
     return
 
 

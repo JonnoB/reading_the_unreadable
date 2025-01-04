@@ -607,7 +607,7 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
     
     # Create output directory if it doesn't exist
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
-    
+
     # Check if output file exists and load it
     try:
         existing_jobs_df = pd.read_csv(output_file)
@@ -622,13 +622,13 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
     # Counter for saving frequency
     processed_since_save = 0
     
-    for issue_id in unique_issues:
+    for issue_id in tqdm(unique_issues, desc="Processing issues"):
         # Filter bbox_df for current issue
         issue_df = bbox_df[bbox_df['issue'] == issue_id]
         
         # Check if this issue has already been processed
         if issue_id in existing_jobs_df['issue'].values:
-            print(f"Skipping issue {issue_id} - already processed")
+            #print(f"Skipping issue {issue_id} - already processed")
             continue
         
         try:
@@ -662,9 +662,9 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
             if processed_since_save >= 5:
                 existing_jobs_df.to_csv(output_file, index=False)
                 processed_since_save = 0
-                print(f"Saved progress to {output_file}")
+                #print(f"Saved progress to {output_file}")
             
-            print(f"Successfully processed page_id {issue_id}")
+            #print(f"Successfully processed page_id {issue_id}")
             
         except Exception as e:
             print(f"Error processing page_id {issue_id}: {str(e)}")

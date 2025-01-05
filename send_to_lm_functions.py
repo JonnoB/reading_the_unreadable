@@ -503,7 +503,10 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
         prompt = prompt_dict.get(image_class, default_prompt)
 
         entry = {
-            "custom_id": image_id + "_" + image_class,
+            "custom_id": image_id + "_" + image_class, 
+            #Although image class is not important to identify the file it is important to know how the file is processed
+            # So although I could just merge on the original bounding box data class, I think it is worth having as part of the code
+            # what it is.
             "body": {
                 "max_tokens": max_tokens,
                 "messages": [

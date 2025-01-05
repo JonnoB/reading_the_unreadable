@@ -1,5 +1,5 @@
 """ 
-This module contains the functions which take bounding box information and the images and sends them to the LLM
+This module contains the functions which take bounding box information and the images and sends them to the LLM, and retrives the data
 This module contains a mixture of image manipulation and LLM api functions.
 """
 import os
@@ -480,7 +480,7 @@ def crop_and_encode_boxes(df, images_folder, max_ratio=1.5, overlap_fraction=0.2
 
 
     
-def create_jsonl_content(encoded_images, prompt_dict):
+def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
     """
     Create JSONL content as a string for file upload.
 
@@ -505,7 +505,7 @@ def create_jsonl_content(encoded_images, prompt_dict):
         entry = {
             "custom_id": image_id,
             "body": {
-                "max_tokens": 100,
+                "max_tokens": max_tokens,
                 "messages": [
                     {
                         "role": "user",
@@ -677,3 +677,195 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
     print(f"Processing complete. Final results saved to {output_file}")
     
     return existing_jobs_df
+
+
+def process_mistral_responses(response):
+    """
+    Process the raw bytes data from Mistral API responses.
+
+    Args:
+        data (bytes): Raw response data from Mistral
+
+    Returns:
+        list: List of parsed JSON objects
+    """
+
+    data = response.read() 
+    # Decode bytes to string
+    text_data = data.decode('utf-8')
+
+    # Split into individual JSON objects
+    json_strings = text_data.strip().split('\n')
+
+    parsed_responses = []
+    for json_str in json_strings:
+        try:
+            parsed_response = json.loads(json_str)
+            parsed_responses.append(parsed_response)
+        except json.JSONDecodeError as e:
+            print(f"Error parsing JSON: {e}")
+            continue
+
+    return parsed_responses
+
+def download_processed_jobs(client, jobs_file='data/processed_jobs.csv', 
+                          output_dir='data/downloaded_results', 
+                          log_file='data/download_log.csv'):
+    """
+    Download results for all processed jobs listed in the jobs file with detailed logging.
+    Downloads each job's output as a JSONL file using the target filename from the jobs file.
+    
+    Parameters:
+    -----------
+    client : object
+        The API client instance
+    jobs_file : str
+        Path to the CSV file containing job information
+    output_dir : str
+        Directory where downloaded JSONL files will be stored
+    log_file : str
+        Path to the CSV file for logging download attempts and results
+    
+    Returns:
+    --------
+    dict
+        Summary of download results
+    """
+    # Create output and log directories if they don't exist
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    
+    # Initialize or load log file
+    try:
+        log_df = pd.read_csv(log_file)
+    except FileNotFoundError:
+        log_df = pd.DataFrame(columns=[
+            'issue', 'job_id', 'target_filename', 'status', 
+            'download_time', 'attempt_count', 'error_message', 'timestamp'
+        ])
+    
+    # Load jobs file
+    try:
+        jobs_df = pd.read_csv(jobs_file)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Jobs file not found: {jobs_file}")
+    
+    # Initialize counters
+    results = {
+        'total_jobs': len(jobs_df),
+        'successful_downloads': 0,
+        'failed_downloads': 0,
+        'failed_jobs': []
+    }
+    
+    # Process each job
+    for _, row in tqdm(jobs_df.iterrows(), total=len(jobs_df), desc="Downloading job results"):
+        issue = row['issue']
+        job_id = row['job_id']
+        target_filename = row['target_filename']
+        output_path = os.path.join(output_dir, target_filename)
+        
+        # Check if file already exists
+        if os.path.exists(output_path):
+            results['successful_downloads'] += 1
+            continue
+        
+        # Check if job was already successfully processed
+        if len(log_df[(log_df['job_id'] == job_id) & (log_df['status'] == 'success')]) > 0:
+            results['successful_downloads'] += 1
+            continue
+        
+        start_time = time.time()
+        try:
+            # Get job status
+            retrieved_job = client.batch.jobs.get(job_id=job_id)
+            
+            # Check if job is completed
+            if retrieved_job.status == 'SUCCESS':
+                try:
+                    # Download and save the file
+                    output_file = client.files.download(file_id=retrieved_job.output_file)
+                    parsed_data = process_mistral_responses(output_file)
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        json.dump(parsed_data, f, indent=2, ensure_ascii=False)
+                    
+                    download_time = time.time() - start_time
+                    results['successful_downloads'] += 1
+                    
+                    # Update log
+                    new_log_entry = pd.DataFrame({
+                        'issue': [issue],
+                        'job_id': [job_id],
+                        'target_filename': [target_filename],
+                        'status': ['success'],
+                        'download_time': [download_time],
+                        'attempt_count': [1],
+                        'error_message': [''],
+                        'timestamp': [datetime.now()]
+                    })
+                    
+                except Exception as e:
+                    error_msg = f"Download failed: {str(e)}"
+                    download_time = time.time() - start_time
+                    results['failed_downloads'] += 1
+                    results['failed_jobs'].append(job_id)
+                    
+                    new_log_entry = pd.DataFrame({
+                        'issue': [issue],
+                        'job_id': [job_id],
+                        'target_filename': [target_filename],
+                        'status': ['failed'],
+                        'download_time': [download_time],
+                        'attempt_count': [1],
+                        'error_message': [error_msg],
+                        'timestamp': [datetime.now()]
+                    })
+                    
+            else:
+                error_msg = f"Job status: {retrieved_job.status}"
+                results['failed_downloads'] += 1
+                results['failed_jobs'].append(job_id)
+                
+                new_log_entry = pd.DataFrame({
+                    'issue': [issue],
+                    'job_id': [job_id],
+                    'target_filename': [target_filename],
+                    'status': ['pending'],
+                    'download_time': [0],
+                    'attempt_count': [1],
+                    'error_message': [error_msg],
+                    'timestamp': [datetime.now()]
+                })
+            
+        except Exception as e:
+            error_msg = f"Job retrieval failed: {str(e)}"
+            download_time = time.time() - start_time
+            results['failed_downloads'] += 1
+            results['failed_jobs'].append(job_id)
+            
+            new_log_entry = pd.DataFrame({
+                'issue': [issue],
+                'job_id': [job_id],
+                'target_filename': [target_filename],
+                'status': ['error'],
+                'download_time': [download_time],
+                'attempt_count': [1],
+                'error_message': [error_msg],
+                'timestamp': [datetime.now()]
+            })
+        
+        # Update log file
+        log_df = pd.concat([log_df, new_log_entry], ignore_index=True)
+        log_df.to_csv(log_file, index=False)
+        
+        # Add a small delay to avoid rate limiting
+        time.sleep(0.1)
+    
+    # Print summary
+    print("\nDownload Summary:")
+    print(f"Total jobs: {results['total_jobs']}")
+    print(f"Successfully downloaded: {results['successful_downloads']}")
+    print(f"Failed downloads: {results['failed_downloads']}")
+    print(f"Downloaded files saved in: {output_dir}")
+    
+    return results

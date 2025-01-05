@@ -14,7 +14,6 @@ This project is an evolution of [CLOCR-C](https://github.com/JonnoB/clocrc), [Sc
 
 # To Do
 
-- Clarify the LM code
 - Create Articles
 - Classify Articles
 
@@ -25,9 +24,11 @@ This project is an evolution of [CLOCR-C](https://github.com/JonnoB/clocrc), [Sc
 
 # Key files
 
-- convert_allncse.py: Turns the NCSE PDF's into a single page PNG files at the specified DPI
+- convert_all_ncse.py: Turns the NCSE PDF's into a single page PNG files at the specified DPI
 - new_approach.py: Code used to explore and plot pages and bounding boxes
-- transfer_files_to_lightning.py: Move image files to lightning.ai, this is simply for use of GPU
+- transfer_files_to_lightning.py: Move image files to lightning.ai, this is simply for convenient use of GPU
+- post_process_images.py: post process the image bounding boxes produced by DocLayout-yolo
+- send_processed_issues.py: Used to send data with post processed bounding boxes to Pixtral
 
 
 # Note

@@ -47,7 +47,10 @@ def _():
     import base64
     import json
     import wand
-
+    from tqdm import tqdm
+    import time
+    import datetime
+    from datetime import datetime
     from mistralai import Mistral
 
     api_key = os.environ["MISTRAL_API_KEY"]
@@ -69,6 +72,7 @@ def _():
         create_jsonl_content,
         crop_and_encode_boxes,
         cv2,
+        datetime,
         json,
         np,
         os,
@@ -78,6 +82,8 @@ def _():
         save_encoded_images,
         save_plots_for_all_files,
         split_image,
+        time,
+        tqdm,
         wand,
     )
 
@@ -146,7 +152,6 @@ def _():
 
 @app.cell
 def _():
-
     """
     process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, 
                            output_file='data/processed_jobs/Leader_issue_PDF_files.csv')
@@ -177,7 +182,7 @@ def _(json):
 
         return job_ids
 
-    def process_mistral_responses(response):
+    def process_mistral_responses2(response):
         """
         Process the raw bytes data from Mistral API responses.
 
@@ -205,7 +210,7 @@ def _(json):
                 continue
 
         return parsed_responses
-    return get_completed_job_ids, process_mistral_responses
+    return get_completed_job_ids, process_mistral_responses2
 
 
 @app.cell
@@ -239,7 +244,6 @@ def _():
 
 @app.cell
 def _():
-
     """
     # Usage:
      # Your original data
@@ -260,6 +264,142 @@ def _():
 
 @app.cell
 def _():
+    return
+
+
+@app.cell
+def _(client, download_processed_jobs):
+    # Example usage
+    results= download_processed_jobs(
+        client=client,
+        jobs_file='data/processed_jobs/English_Womans_Journal_issue_PDF_files.csv',
+        output_dir='data/download_jobs/English_Womans_Journal_issue_PDF_files',
+        log_file='data/download_jobs/English_Womans_Journal_issue_PDF_files.csv'
+    )
+    return (results,)
+
+
+@app.cell
+def _(results):
+    results
+    return
+
+
+@app.cell
+def _(client):
+    list_job = client.batch.jobs.list(
+        status="SUCCESS"
+    )
+    return (list_job,)
+
+
+@app.cell
+def _(list_job):
+    list_job
+    return
+
+
+@app.cell
+def _(client, json, process_mistral_responses):
+    retrieved_job = client.batch.jobs.get(job_id='ce3d0b62-0163-4d4f-a94d-ef82ecf54035')
+    output_file = client.files.download(file_id=retrieved_job.output_file)
+
+    parsed_data = process_mistral_responses(output_file)
+    with open('data/output.json', 'w', encoding='utf-8') as f:
+        json.dump(parsed_data, f, indent=2, ensure_ascii=False)
+    return f, output_file, parsed_data, retrieved_job
+
+
+@app.cell
+def _(parsed_data):
+    parsed_data[0]
+    return
+
+
+@app.cell
+def _(pd):
+    # Assuming your JSON data is stored in a variable called 'data'
+    # If it's in a file, you'll need to load it first using json.load() or json.loads()
+
+    def extract_data(json_data):
+        extracted_data = []
+        
+        for item in json_data:
+            row = {
+                'id': item['id'],
+                'custom_id': item['custom_id'],
+                'prompt_tokens': item['response']['body']['usage']['prompt_tokens'],
+                'completion_tokens': item['response']['body']['usage']['completion_tokens'],
+                'total_tokens': item['response']['body']['usage']['total_tokens'],
+                'finish_reason': item['response']['body']['choices'][0]['finish_reason'],
+                'content': item['response']['body']['choices'][0]['message']['content']
+            }
+            extracted_data.append(row)
+        
+        return pd.DataFrame(extracted_data)
+
+
+    def parse_filename(filename):
+        # Split by '_page_' first to get issue_id
+        issue_id, rest = filename.split('_page_')
+        
+        # Split the rest by '_' to separate components
+        parts = rest.split('_')
+        
+        # Get page number
+        page_number = int(parts[0])
+        
+        # Get position info (B0C1R2)
+        position_info = parts[1]
+        
+        # Extract B, C, R components
+        block = int(position_info.split('B')[1].split('C')[0])
+        column = int(position_info.split('C')[1].split('R')[0])
+        reading_order = int(position_info.split('R')[1])
+        
+        # Get segment number
+        segment = int(parts[3])
+        
+        return {
+            'issue_id': issue_id,
+            'page_number': page_number,
+            'block': block,
+            'column': column,
+            'reading_order': reading_order,
+            'segment': segment
+        }
+
+    # Assuming your dataframe has a column named 'filename'
+    def decompose_filenames(df):
+        # Apply the parsing function to each filename
+        parsed = df['custom_id'].apply(parse_filename)
+        
+        # Convert the series of dictionaries to a dataframe
+        parsed_df = pd.DataFrame(parsed.tolist())
+        
+        # Combine with original dataframe
+        return pd.concat([df, parsed_df], axis=1)
+
+    return decompose_filenames, extract_data, parse_filename
+
+
+@app.cell
+def _(decompose_filenames, extract_data, json):
+    jsonl_path = 'data/download_jobs/English_Womans_Journal_issue_PDF_files/EWJ-1858-03-01.jsonl'
+
+    with open(jsonl_path, 'r') as file:
+        json_data = json.load(file)  # Use load instead of loads
+
+    # Create the DataFrame
+    df = extract_data(json_data)
+    df = decompose_filenames(df)
+
+    return df, file, json_data, jsonl_path
+
+
+@app.cell
+def _(df):
+    df
     return
 
 

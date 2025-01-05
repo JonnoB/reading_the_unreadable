@@ -1,10 +1,62 @@
 """
-These are helper functions related to the pre-processing stage, of manipulating the bounding box to make it 
-ready to send to the LLM
+Bounding Box Processing Module
 
+This module contains helper functions for preprocessing and manipulating bounding boxes
+in document layout analysis for historical newspapers. The functions are primarily designed to work with DocLayout-yolo
+output but may be compatible with other YOLO models.
 
+Key Functions:
+-------------
+numba_fill_count : Function
+    Optimized function for counting overlapping boxes using Numba.
 
+sum_of_area : Function
+    Calculates the total area covered by bounding boxes.
 
+calculate_article_coverage : Function
+    Computes pixel coverage statistics for articles on a page.
+
+calculate_coverage_and_overlap : Function
+    Processes entire dataset to calculate coverage and overlap metrics.
+
+print_area_meta : Function
+    Calculates metadata about printed page areas.
+
+reclassify_abandon_boxes : Function
+    Reclassifies boxes based on their position relative to abandon boxes.
+
+assign_columns : Function
+    Assigns column numbers and edges to bounding boxes.
+
+create_page_blocks : Function
+    Creates page blocks based on titles and content organization.
+
+create_reading_order : Function
+    Establishes reading order for boxes considering page blocks.
+
+merge_boxes_within_column_width : Function
+    Merges compatible boxes within column width constraints.
+
+preprocess_bbox : Function
+    Main wrapper function that performs all preprocessing steps.
+
+plot_boxes_on_image : Function
+    Visualizes bounding boxes on document images.
+
+Dependencies:
+------------
+- pandas
+- numpy
+- numba
+- opencv-python (cv2)
+- matplotlib
+- tqdm
+
+Notes:
+------
+- Requires input data to have a 'page_id' column for unique page identification
+- Designed for document layout analysis tasks
+- Includes visualization capabilities for debugging and verification
 """
 
 

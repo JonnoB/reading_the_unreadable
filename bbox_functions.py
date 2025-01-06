@@ -647,6 +647,41 @@ def preprocess_bbox(df, min_height = 10):
 
 
 def plot_boxes_on_image(df, image_path, figsize=(15,15), show_reading_order=False):
+    """
+    Plot bounding boxes and their classifications on a page image with optional reading order visualization.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame containing bounding box coordinates and classifications.
+        Required columns: 'x1', 'y1', 'x2', 'y2', 'class'
+        Optional column: 'reading_order' (if show_reading_order=True)
+    
+    image_path : str
+        Path to the input image file.
+    
+    figsize : tuple, optional (default=(15,15))
+        Figure size in inches (width, height).
+    
+    show_reading_order : bool, optional (default=False)
+        If True, draws arrows between boxes indicating reading order sequence.
+        Requires 'reading_order' column in the DataFrame.
+
+    Returns:
+    --------
+    matplotlib.figure.Figure
+        The figure object containing the plotted image with bounding boxes.
+
+    Notes:
+    ------
+    - The function uses predefined colors for specific classes:
+        * 'plain text': Red
+        * 'title': Green
+        * 'figure': Blue
+    - Additional classes are assigned colors automatically using a rainbow colormap.
+    - Each box is labeled with its class name.
+    - A legend is included showing all class types and their corresponding colors.
+    """
     # Read the image
     image = cv2.imread(image_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB

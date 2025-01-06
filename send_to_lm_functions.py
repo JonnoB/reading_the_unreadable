@@ -217,19 +217,38 @@ def initialize_log_file(output_folder):
 
 
 
-def save_text_output(output_folder, filename, content_list):
+def combine_article_segments(df):
     """
-    Save processed text content to a file.
-
+    Process DataFrame by grouping and knitting text within groups.
+    
     Args:
-        output_folder (str): Path to the output directory.
-        filename (str): Name of the original image file.
-        content_list (list): List of processed text content to save.
+        df (pandas.DataFrame): Input DataFrame with columns 'issue_id', 'page_number', 
+                             'block', 'column_number', 'reading_order', 'segment', 'text'
+    
+    Returns:
+        pandas.DataFrame: Processed DataFrame with knitted text
     """
-    combined_content = knit_string_list(content_list)
-    output_file = os.path.join(output_folder, f"{os.path.splitext(filename)[0]}.txt")
-    with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(combined_content)
+    # Create a copy of the input DataFrame
+    df = df.copy()
+    
+    # Sort the DataFrame by segment within groups
+    df = df.sort_values(['issue_id', 'page_number', 'block', 'column', 
+                        'reading_order', 'segment'])
+    
+    # Function to process each group
+    def knit_group_texts(group):
+        text_list = group['content'].tolist()
+        knitted_text = knit_string_list(text_list)
+        return pd.Series({'content': knitted_text})
+    
+    # Group and apply the knitting function
+    result_df = (df.groupby(['issue_id', 'page_number', 'block', 'column', 
+                            'reading_order'])
+                 .apply(knit_group_texts)
+                 .reset_index())
+    
+    return result_df
+
 
 
 def update_log(log_df, filename, processing_time, total_input_tokens, total_output_tokens, total_tokens, sub_images, status):
@@ -872,3 +891,72 @@ def download_processed_jobs(client, jobs_file='data/processed_jobs.csv',
     print(f"Downloaded files saved in: {output_dir}")
     
     return results
+
+
+def convert_returned_json_to_dataframe(json_data):
+
+    """
+    Turns the json of the returned data into a dataframe
+    
+    """
+    extracted_data = []
+
+    for item in json_data:
+        row = {
+            'id': item['id'],
+            'custom_id': item['custom_id'],
+            'prompt_tokens': item['response']['body']['usage']['prompt_tokens'],
+            'completion_tokens': item['response']['body']['usage']['completion_tokens'],
+            'total_tokens': item['response']['body']['usage']['total_tokens'],
+            'finish_reason': item['response']['body']['choices'][0]['finish_reason'],
+            'content': item['response']['body']['choices'][0]['message']['content']
+        }
+        extracted_data.append(row)
+
+    return pd.DataFrame(extracted_data)
+
+
+def parse_filename(filename):
+    # Split by '_page_' first to get issue_id
+    issue_id, rest = filename.split('_page_')
+
+    # Split the rest by '_' to separate components
+    parts = rest.split('_')
+
+    # Get page number
+    page_number = int(parts[0])
+
+    # Get position info (B0C1R2)
+    position_info = parts[1]
+
+    # Extract B, C, R components
+    block = int(position_info.split('B')[1].split('C')[0])
+    column = int(position_info.split('C')[1].split('R')[0])
+    reading_order = int(position_info.split('R')[1])
+
+    # Get segment number
+    segment = int(parts[3])
+
+    return {
+        'issue_id': issue_id,
+        'page_number': page_number,
+        'block': block,
+        'column': column,
+        'reading_order': reading_order,
+        'segment': segment
+    }
+
+# Assuming your dataframe has a column named 'filename'
+def decompose_filenames(df):
+
+    """ 
+    Separates the custom id back into issue, page number, block, column, reading_order, and segment.
+    """
+    # Apply the parsing function to each filename
+    parsed = df['custom_id'].apply(parse_filename)
+
+    # Convert the series of dictionaries to a dataframe
+    parsed_df = pd.DataFrame(parsed.tolist())
+
+    # Combine with original dataframe
+    return pd.concat([df, parsed_df], axis=1)

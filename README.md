@@ -11,11 +11,17 @@ This project is an evolution of [CLOCR-C](https://github.com/JonnoB/clocrc), [Sc
 - Convert NCSE files to single page PNG
 - Predict bounding boxes using DocLayout-YOLO
 - Post-process bounding boxes
+- Batch Process Data
+- Construct Text Pieces
+- Classify Text
+
+Each element of the project pipeline has a python script for execution. However, there is no single end-to-end script. 
 
 # To Do
-
+- Create real time version
 - Create Articles
 - Classify Articles
+- Create simple end-to-end non-batch example on Lightning
 
 # Key Modules
 
@@ -25,11 +31,13 @@ This project is an evolution of [CLOCR-C](https://github.com/JonnoB/clocrc), [Sc
 # Key files
 
 - convert_all_ncse.py: Turns the NCSE PDF's into a single page PNG files at the specified DPI
-- new_approach.py: Code used to explore and plot pages and bounding boxes
 - transfer_files_to_lightning.py: Move image files to lightning.ai, this is simply for convenient use of GPU
 - post_process_images.py: post process the image bounding boxes produced by DocLayout-yolo
-- send_processed_issues.py: Used to send data with post processed bounding boxes to Pixtral
-
+- send_processed_issues_to_pixtral_as_batch.py: Used to send data with post-processed bounding boxes to Pixtral as a batch job
+- download_batched_results_from_pixtral.py: retrieve the batched results using the previously generated log file
 
 # Note
 For package management I used the uv library from astral. It is super fast an avoids dependency issues.
+
+- The deskew and square crop is in process_images, DO NOT DELETE!
+- example plotting is in sketching_postprocess_and_plot.py

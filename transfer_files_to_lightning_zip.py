@@ -20,7 +20,7 @@ total_root = "/media/jonno/ncse/converted/all_files_png_120"
 
 files = os.listdir(total_root)
 zip_files = [f for f in files if f.endswith('.zip')]
-zip_files = ['Publishers_Circular_issue_PDF_files.zip']
+
 
 print(f'zip files identified {zip_files}')
 for zip_file in zip_files:

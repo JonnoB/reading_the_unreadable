@@ -430,7 +430,7 @@ def process_single_box(image, row, height, width, max_ratio, overlap_fraction, d
         print(f"Error processing box {row['box_page_id']}: {str(e)}")
         return {}
 
-def crop_and_encode_boxes(df, images_folder, max_ratio=1.5, overlap_fraction=0.2, deskew=True):
+def crop_and_encode_boxes(df, images_folder, max_ratio=1, overlap_fraction=0.2, deskew=True):
     """
     Process and encode image regions defined by bounding boxes in the input DataFrame.
 

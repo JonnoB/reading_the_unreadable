@@ -633,7 +633,7 @@ def preprocess_bbox(df, min_height = 10):
     bbox_df['height'] = bbox_df['y2'] - bbox_df['y1']  
     bbox_df = bbox_df[bbox_df['height'] >= min_height]
     
-    #remove small bounding boxes to make sending to LLM more efficient and result in larger text blocks
+    #remove small bounding boxes to make sending to LLM more efficient and results in larger text blocks
     bbox_df = merge_boxes_within_column_width(bbox_df)
     
     #due to merging re-do reading order

@@ -24,27 +24,50 @@ from io import BytesIO
 import re
 from numba import jit
 
+
+def convert_returned_streaming_to_dataframe(response, id=None, custom_id=None):
+    """
+    Process a single API response and return it in DataFrame format
+    """
+    extracted_data = [{
+        'id': id,
+        'custom_id': custom_id,
+        'prompt_tokens': response.usage.prompt_tokens,
+        'completion_tokens': response.usage.completion_tokens,
+        'total_tokens': response.usage.total_tokens,
+        'finish_reason': response.choices[0].finish_reason,
+        'content': response.choices[0].message.content
+    }]
+
+    return pd.DataFrame(extracted_data)
+
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def process_image_with_api(image_base64, prompt,  model="mistral/pixtral-12b-2409"):
     """
-    Process an image using an AI model API to extract information from it.
+    Process an image using an AI model API to extract information based on a given prompt.
 
-    This function sends a base64-encoded image to an AI model API, which analyzes
-    the image (assumed to be a scan of a 19th-century English newspaper) and extracts
-    relevant information from it, including text, lists, tables, and image descriptions.
+    This function sends a base64-encoded image along with a text prompt to an AI model API,
+    which analyzes the image according to the provided prompt and returns a response.
 
     Args:
         image_base64 (str): A base64-encoded string representation of the image.
-        model (str, optional): The name of the AI model to use. Defaults to "pixtral-12b-2409".
+        prompt (str): The text prompt instructing the model how to analyze the image.
+        model (str, optional): The name of the AI model to use. Defaults to "mistral/pixtral-12b-2409".
 
     Returns:
-        tuple: A tuple containing two elements:
-            - content (str): The extracted information from the image as text.
-            - usage (tuple): A tuple of (prompt_tokens, completion_tokens, total_tokens)
-              representing the API usage statistics.
+        litellm.ModelResponse: The complete response object from the API containing:
+            - choices: List of completion choices
+            - model: The model used
+            - usage: Token usage statistics
+            - system_fingerprint: Model system identifier
 
     Raises:
         Exception: If an error occurs during the API call or processing after all retries.
+        The function will retry up to 3 times with exponential backoff (min=4s, max=10s).
+
+    Note:
+        This function is decorated with @retry to automatically retry failed attempts
+        with exponential backoff between attempts.
     """
     try:
         response = litellm.completion(
@@ -66,13 +89,12 @@ def process_image_with_api(image_base64, prompt,  model="mistral/pixtral-12b-240
             ]
         )
 
-        content = response.choices[0].message.content
-        usage = response.usage
-        return content, (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens)
+        return response
 
     except Exception as e:
         print(f"An error occurred in process_image_with_api: {str(e)}")
         raise  # Re-raise the exception to trigger a retry
+
 
 
 def knit_strings(s1: str, s2: str) -> str:
@@ -522,10 +544,8 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
         prompt = prompt_dict.get(image_class, default_prompt)
 
         entry = {
-            "custom_id": image_id + "_" + image_class, 
-            #Although image class is not important to identify the file it is important to know how the file is processed
-            # So although I could just merge on the original bounding box data class, I think it is worth having as part of the code
-            # what it is.
+            "custom_id": image_id,
+            "image_class": image_class,  # Added as separate field
             "body": {
                 "max_tokens": max_tokens,
                 "messages": [

@@ -25,10 +25,10 @@ path_mapping = {
     'Northern_Star_issue_PDF_files_2080.parquet': '/media/jonno/ncse/converted/all_files_png_200/Northern_Star_issue_PDF_files'
 }
 
-path_mapping = {
-    'Leader_issue_PDF_files_1040.parquet': '/media/jonno/ncse/converted/all_files_png_120/Leader_issue_PDF_files',
-    'English_Womans_Journal_issue_PDF_files_1040.parquet': '/media/jonno/ncse/converted/all_files_png_120/English_Womans_Journal_issue_PDF_files'
-}
+# path_mapping = {
+#     'Leader_issue_PDF_files_1040.parquet': '/media/jonno/ncse/converted/all_files_png_120/Leader_issue_PDF_files',
+#     'English_Womans_Journal_issue_PDF_files_1040.parquet': '/media/jonno/ncse/converted/all_files_png_120/English_Womans_Journal_issue_PDF_files'
+# }
 # API setup
 api_key = os.environ["MISTRAL_API_KEY"]
 client = Mistral(api_key=api_key)

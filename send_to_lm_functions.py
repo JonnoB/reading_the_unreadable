@@ -23,6 +23,7 @@ from PIL import Image
 from io import BytesIO
 import re
 from numba import jit
+import requests
 
 
 def convert_returned_streaming_to_dataframe(response, id=None, custom_id=None):
@@ -347,7 +348,47 @@ def save_encoded_images(encoded_images, output_folder):
     print(f"Saved {len(saved_paths)} images to {output_folder}")
     return saved_paths
 
+def crop_image_to_bbox(image, bbox_dict, height, width):
+    """
+    Crops an image according to the bounding box coordinates provided in the input dictionary.
 
+    Args:
+        bbox_dict (dict): A dictionary containing the following keys:
+            - 'x1': Left coordinate of the bounding box
+            - 'y1': Top coordinate of the bounding box
+            - 'x2': Right coordinate of the bounding box
+            - 'y2': Bottom coordinate of the bounding box
+            - 'box_page_id': Identifier for the bounding box
+
+    Returns:
+        dict: An empty dictionary if the crop operation fails (invalid coordinates or empty crop),
+              or the cropped image data if successful.
+
+    Note:
+        -Typically the dictionar is a single row of a dataframe
+        - The function assumes the existence of global variables 'image', 'width', and 'height'
+        - Coordinates are clamped to image boundaries (0 to width/height)
+        - Coordinates are converted to integers
+        - Invalid coordinates (x2 ≤ x1 or y2 ≤ y1) result in an empty dictionary
+    """
+        # Extract coordinates
+    x1 = max(0, int(bbox_dict['x1']))
+    y1 = max(0, int(bbox_dict['y1']))
+    x2 = min(width, int(bbox_dict['x2']))
+    y2 = min(height, int(bbox_dict['y2']))
+
+    if x2 <= x1 or y2 <= y1:
+        print(f"Invalid coordinates for box {bbox_dict['box_page_id']}")
+        return {}
+
+    # Crop and convert
+    # Crop image to bounding box dimensions
+    cropped_image = image[y1:y2, x1:x2]
+    if cropped_image.size == 0:
+        print(f"Empty crop for box {bbox_dict['box_page_id']}")
+        return {}
+
+    return cropped_image
 
 def convert_to_pil(cv2_image):
     """Convert CV2 image to PIL image."""
@@ -392,25 +433,53 @@ def encode_pil_image(pil_image, page_id, box_page_id, segment_num, image_class):
         'class': image_class
     }
 
-def process_single_box(image, row, height, width, max_ratio, overlap_fraction, deskew):
-    """Process a single bounding box from an image."""
+def process_single_box(image, row, height, width, max_ratio, overlap_fraction, deskew, crop_image = True):
+    """
+    Process a single bounding box from an image by cropping, deskewing, and encoding it based on specific criteria.
+
+    Args:
+        image (numpy.ndarray): The source image to process.
+        row (dict): Dictionary containing box information with keys:
+            - 'x1', 'y1', 'x2', 'y2': Coordinates of the bounding box
+            - 'box_page_id': Unique identifier for the box
+            - 'page_id': Page identifier
+            - 'class': Image classification (optional)
+        height (int): Height of the source image
+        width (int): Width of the source image
+        max_ratio (float): Maximum allowed height-to-width ratio before splitting
+        overlap_fraction (float): Fraction of overlap between split segments
+        deskew (bool): Whether to apply deskew correction to non-figure images
+        crop_image (bool): Whether to crop the image, defaults to true
+
+    Returns:
+        dict: Dictionary mapping encoded image keys to their corresponding values.
+              Returns empty dict if processing fails.
+              Format: {
+                  'key': 'encoded_image_value'
+              }
+
+    Processing Steps:
+        1. Extracts and validates coordinates from the row
+        2. Crops image to bounding box dimensions
+        3. Converts to PIL image
+        4. Applies deskewing if specified (except for figures)
+        5. Processes image based on its aspect ratio:
+           - Splits tall images (ratio > max_ratio)
+           - Pads wide images (ratio < 1)
+           - Processes normal ratio images directly
+
+    Raises:
+        No exceptions are raised; errors are caught and logged, returning empty dict
+
+    Notes:
+        if the image is not going to be cropped then the row data only needs to include box_page_id, 'page_id', 'class'.
+    """
     try:
-        # Extract coordinates
-        x1 = max(0, int(row['x1']))
-        y1 = max(0, int(row['y1']))
-        x2 = min(width, int(row['x2']))
-        y2 = min(height, int(row['y2']))
-
-        if x2 <= x1 or y2 <= y1:
-            print(f"Invalid coordinates for box {row['box_page_id']}")
-            return {}
-
-        # Crop and convert
-        # Crop image to bounding box dimensions
-        cropped = image[y1:y2, x1:x2]
-        if cropped.size == 0:
-            print(f"Empty crop for box {row['box_page_id']}")
-            return {}
+        # Crop image
+        if crop_image:
+            cropped = crop_image_to_bbox(image, row, height, width)
+        else:
+            cropped = image
 
         cropped_pil = convert_to_pil(cropped)
         is_figure = row.get('class') == 'figure'
@@ -452,7 +521,7 @@ def process_single_box(image, row, height, width, max_ratio, overlap_fraction, d
         print(f"Error processing box {row['box_page_id']}: {str(e)}")
         return {}
 
-def crop_and_encode_boxes(df, images_folder, max_ratio=1, overlap_fraction=0.2, deskew=True):
+def crop_and_encode_boxes(df, images_folder, max_ratio=1, overlap_fraction=0.2, deskew=True, crop_image = True):
     """
     Process and encode image regions defined by bounding boxes in the input DataFrame.
 
@@ -514,7 +583,7 @@ def crop_and_encode_boxes(df, images_folder, max_ratio=1, overlap_fraction=0.2, 
 
         for _, row in group.iterrows():
             encoded_images.update(
-                process_single_box(image, row, height, width, max_ratio, overlap_fraction, deskew)
+                process_single_box(image, row, height, width, max_ratio, overlap_fraction, deskew, crop_image= crop_image)
             )
 
     return encoded_images
@@ -625,7 +694,8 @@ def create_batch_job(client, base_filename, encoded_images, prompt_dict, job_typ
             os.remove(temp_file_path)
 
 
-def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_file='data/processed_jobs.csv'):
+def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_file='data/processed_jobs.csv', 
+                           deskew = True, crop_image= True, max_ratio = 1):
     """
     Process periodical issues one at a time, creating batch jobs for OCR processing
     
@@ -677,10 +747,11 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
             # Encode images for this issue
             encoded_images = crop_and_encode_boxes(
                 df=issue_df,
-                images_folder=images_folder,
-                max_ratio=1,
+                images_folder = images_folder,
+                max_ratio = max_ratio,
                 overlap_fraction=0.2,
-                deskew=True
+                deskew = deskew,
+                crop_image = crop_image
             )
             
             # Create batch job
@@ -980,3 +1051,91 @@ def decompose_filenames(df):
 
     # Combine with original dataframe
     return pd.concat([df, parsed_df], axis=1)
+
+
+
+def delete_all_batch_files(client, api_key, limit=100):
+    """
+    Delete all files associated with batch processing, handling pagination.
+
+    Args:
+        client: Mistral client instance
+        api_key: Your Mistral API key
+        limit: Number of files to fetch per page
+
+    Returns:
+        tuple: (int, list) - Count of deleted files and list of any failed deletions
+    """
+    deleted_count = 0
+    failed_deletions = []
+
+    try:
+        # Set up headers for requests
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        # Handle pagination
+        has_more = True
+        after = None
+
+        while has_more:
+            # List files with pagination
+            params = {'limit': limit}
+            if after:
+                params['after'] = after
+
+            # Make GET request to list files
+            list_response = requests.get(
+                'https://api.mistral.ai/v1/files',
+                headers=headers,
+                params=params
+            )
+
+            if list_response.status_code != 200:
+                print(f"Error listing files: Status code {list_response.status_code}")
+                return deleted_count, failed_deletions
+
+            files_data = list_response.json()
+
+            # Process this page of files
+            for file in files_data.get('data', []):
+                try:
+                    # Only delete files with purpose "batch"
+                    if file['purpose'] == "batch":
+                        # Make delete request
+                        delete_response = requests.delete(
+                            f'https://api.mistral.ai/v1/files/{file["id"]}',
+                            headers=headers
+                        )
+
+                        if delete_response.status_code == 200:
+                            deleted_count += 1
+                            print(f"Successfully deleted file with ID: {file['id']}")
+                        else:
+                            failed_deletions.append({
+                                'file_id': file['id'],
+                                'error': f"Status code: {delete_response.status_code}"
+                            })
+                            print(f"Failed to delete file with ID: {file['id']}, Status code: {delete_response.status_code}")
+
+                except Exception as e:
+                    failed_deletions.append({
+                        'file_id': file['id'],
+                        'error': str(e)
+                    })
+                    print(f"Failed to delete file with ID: {file['id']}. Error: {str(e)}")
+
+            # Check if there are more files to process
+            has_more = files_data.get('has_more', False)
+            if has_more and files_data['data']:
+                after = files_data['data'][-1]['id']
+            else:
+                has_more = False
+
+        return deleted_count, failed_deletions
+
+    except Exception as e:
+        print(f"Error in process: {str(e)}")
+        return deleted_count, failed_deletions

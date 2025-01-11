@@ -570,6 +570,28 @@ def adjust_x_coordinates(df):
     return df_adjusted
 
 
+def basic_box_data(df):
+
+    """ 
+    Calculates the basic information about the bounding boxes on the page
+    """
+
+    df['width'] = df['x2'] - df['x1']
+    df['height'] = df['y2'] - df['y1']
+    df['ratio'] = df['height']/df['width']  
+    df['center_x'] = df['width'] + df['x1']
+    df['center_y'] = df['height'] + df['y1']
+    
+    # Calculate the column width to get the total number of columns on the page
+    df_text = df.loc[df['class'].isin(['plain text']), ['page_id', 'width']].copy()
+    df_text = df_text.groupby('page_id')['width'].median().rename('median_box_width')
+    df = df.join(df_text, on = 'page_id')
+    
+    df = print_area_meta(df)
+    df['column_counts'] =  np.floor(df['print_width']/df['median_box_width'])
+    df['column_width'] = df['print_width']/df['column_counts']
+
+    return df
 
 def preprocess_bbox(df, min_height = 10):
 
@@ -584,20 +606,7 @@ def preprocess_bbox(df, min_height = 10):
 
     bbox_all_df['issue'] = bbox_all_df['filename'].str.split('_page_').str[0]
     
-    bbox_all_df['width'] = bbox_all_df['x2'] - bbox_all_df['x1']
-    bbox_all_df['height'] = bbox_all_df['y2'] - bbox_all_df['y1']
-    bbox_all_df['ratio'] = bbox_all_df['height']/bbox_all_df['width']  
-    bbox_all_df['center_x'] = bbox_all_df['width'] + bbox_all_df['x1']
-    bbox_all_df['center_y'] = bbox_all_df['height'] + bbox_all_df['y1']
-    
-    # Calculate the column width to get the total number of columns on the page
-    bbox_all_df_text = bbox_all_df.loc[bbox_all_df['class'].isin(['plain text']), ['page_id', 'width']].copy()
-    bbox_all_df_text = bbox_all_df_text.groupby('page_id')['width'].median().rename('median_box_width')
-    bbox_all_df = bbox_all_df.join(bbox_all_df_text, on = 'page_id')
-    
-    bbox_all_df = print_area_meta(bbox_all_df)
-    bbox_all_df['column_counts'] =  np.floor(bbox_all_df['print_width']/bbox_all_df['median_box_width'])
-    bbox_all_df['column_width'] = bbox_all_df['print_width']/bbox_all_df['column_counts']
+    bbox_all_df = basic_box_data(bbox_all_df)
     
     bbox_all_df = reclassify_abandon_boxes(bbox_all_df, top_fraction=0.1)
     
@@ -641,7 +650,7 @@ def preprocess_bbox(df, min_height = 10):
     
     #add in bbox ID
     bbox_df['box_page_id'] = "B" + bbox_df['page_block'].astype(str) + "C"+bbox_df['column_number'].astype(str)  + "R" + bbox_df['reading_order'].astype(str) 
-    bbox_all_df['ratio'] = bbox_all_df['height']/bbox_all_df['width']  
+    bbox_df['ratio'] = bbox_df['height']/bbox_df['width']  
 
     return bbox_df
 

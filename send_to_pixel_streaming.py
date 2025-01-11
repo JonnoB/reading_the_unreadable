@@ -24,38 +24,37 @@ def _(mo):
 def _():
     import os
     import pandas as pd
-    from send_to_lm_functions import process_image_with_api, crop_and_encode_boxes, decompose_filenames, combine_article_segments, convert_returned_streaming_to_dataframe, process_image_with_api
+    from send_to_lm_functions import process_image_with_api, crop_and_encode_boxes, decompose_filenames, combine_article_segments, convert_returned_streaming_to_dataframe, process_image_with_api, delete_all_batch_files
     from bbox_functions import plot_boxes_on_image
     from tqdm import tqdm
+    import numpy as np
+
+    from bbox_functions import assign_columns, basic_box_data, create_reading_order
 
     total_root = "/media/jonno/ncse/converted/all_files_png_120"
     # image folder path
     EWJ = os.path.join(total_root, 'English_Womans_Journal_issue_PDF_files')
     CLD = os.path.join(total_root, 'Leader_issue_PDF_files')
 
-    # load bbox dataframe
-    bbox_df = pd.read_parquet('data/periodical_bboxes/post_process/English_Womans_Journal_issue_PDF_files_1040.parquet')
-
-
     CLD_bbox_df = pd.read_parquet('data/periodical_bboxes/post_process/Leader_issue_PDF_files_1040.parquet')
     # sub-select 1 or two issues from EWJ
 
 
-    EWJ_sub = bbox_df.loc[bbox_df['issue']=='EWJ-1858-03-01'].sample(30, random_state = 1858)
-
-    CLD_sub = CLD_bbox_df.loc[CLD_bbox_df['filename'].isin(['CLD-1850-04-20_page_10.png', 'CLD-1850-04-20_page_11.png', 'CLD-1850-04-20_page_12.png'])]
-
+    CLD_sub = CLD_bbox_df.loc[CLD_bbox_df['filename'].isin(['CLD-1850-04-20_page_10.png', 'CLD-1850-04-20_page_11.png'])]
     return (
         CLD,
         CLD_bbox_df,
         CLD_sub,
         EWJ,
-        EWJ_sub,
-        bbox_df,
+        assign_columns,
+        basic_box_data,
         combine_article_segments,
         convert_returned_streaming_to_dataframe,
+        create_reading_order,
         crop_and_encode_boxes,
         decompose_filenames,
+        delete_all_batch_files,
+        np,
         os,
         pd,
         plot_boxes_on_image,
@@ -72,13 +71,6 @@ def _(CLD_sub):
 
 
 @app.cell
-def _(EWJ_sub):
-
-    EWJ_sub
-    return
-
-
-@app.cell
 def _():
     prompt_dict = {
         'plain text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only, in the case of headers use #. Do not add any commentary.""",
@@ -88,53 +80,6 @@ def _():
 
     default_prompt = prompt_dict.get('plain text', 'Describe this text')
     return default_prompt, prompt_dict
-
-
-@app.cell
-def _():
-    #image_dict = crop_and_encode_boxes(EWJ_sub, EWJ, max_ratio = 1)
-    return
-
-
-@app.cell
-def _(encoded_images, prompt_dict):
-    jsonl_lines = []
-    default_prompt = prompt_dict.get('plain text', 'Describe this text')
-
-    for image_id, image_data in encoded_images.items():
-        # Get the appropriate prompt based on the image class
-        image_class = image_data.get('class', 'plain text')
-        prompt = prompt_dict.get(image_class, default_prompt)
-        
-    return (
-        default_prompt,
-        image_class,
-        image_data,
-        image_id,
-        jsonl_lines,
-        prompt,
-    )
-
-
-@app.cell
-def _(image_dict, process_image_with_api):
-
-    _prompt = """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Please transcribe using markdown hash to indicate headers, otherwise plain text only. Do not add any commentary. """
-
-
-    target_image = image_dict[ 'EWJ-1858-03-01_page_11_B0C1R1_segment_0']
-
-    content, tokens = process_image_with_api(target_image['image'], 
-                           # prompt_dict.get(target_image['class']), 
-                            _prompt,                       
-                            model="mistral/pixtral-12b-2409")
-    return content, target_image, tokens
-
-
-@app.cell
-def _(content):
-    content
-    return
 
 
 @app.cell
@@ -150,94 +95,18 @@ def _(CLD_image_dict):
 
 
 @app.cell
-def _(CLD_image_dict, process_image_with_api):
-    #
-    _prompt = """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only, in the case of headers use #. Do not add any commentary."""
-
-    _target_image = CLD_image_dict['CLD-1850-04-20_page_11_B0C1R2_segment_0']
-
-    CLD_content, CLD_tokens = process_image_with_api(_target_image['image'], 
-                           # prompt_dict.get(target_image['class']), 
-                            _prompt,                       
-                            model="mistral/pixtral-12b-2409")
-    return CLD_content, CLD_tokens
-
-
-@app.cell
-def _(CLD_content):
-    CLD_content
-    return
-
-
-@app.cell
 def _(CLD, CLD_bbox_df, os, plot_boxes_on_image):
-
     page_id = 'CLD-1850-04-20_page_12'
 
     plot_bbox = CLD_bbox_df.loc[CLD_bbox_df['page_id']==page_id]
 
     plot_boxes_on_image(plot_bbox, os.path.join(CLD,page_id+'.png') , figsize=(15,15), show_reading_order=True)
-
     return page_id, plot_bbox
 
 
 @app.cell
-def _(
-    CLD,
-    CLD_sub,
-    combine_article_segments,
-    crop_and_encode_boxes,
-    decompose_filenames,
-    default_prompt,
-    pd,
-    process_image_with_api,
-    tqdm,
-):
-    _prompt_dict = {
-        'plain text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.""",
-        'figure': 'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
-        'table': 'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'
-    }
-    # Create empty lists to store the data
-    _data_list = []
-
-    _encoded_images = crop_and_encode_boxes(CLD_sub, CLD, max_ratio = 1)
-
-    for _image_id, _image_data in tqdm(_encoded_images.items()):
-        # Get the appropriate prompt based on the image class
-        _image_class = _image_data.get('class', 'plain text')
-        _prompt = _prompt_dict.get(_image_class, default_prompt)
-
-        _content, _tokens = process_image_with_api(_image_data['image'], 
-                            _prompt,                       
-                            model="mistral/pixtral-12b-2409")
-        
-        # Create a dictionary for each iteration
-        _row_dict = {
-            'image_id': _image_id,
-            'content': _content,
-            'prompt_tokens': _tokens[0],
-            'completion_tokens': _tokens[1],
-            'total_tokens': _tokens[2]
-        }
-        
-        # Append the dictionary to the list
-        _data_list.append(_row_dict)
-
-    # Create DataFrame from the list of dictionaries
-    df = pd.DataFrame(_data_list)
-
-    df = decompose_filenames(df.rename(columns = {'image_id':'custom_id'}))
-
-    df = combine_article_segments(df)
-    return (df,)
-
-
-@app.cell
-def _(df):
-
-
-    df
+def _(CLD_image_dict):
+    CLD_image_dict.keys()
     return
 
 
@@ -245,16 +114,16 @@ def _(df):
 def _(
     CLD_image_dict,
     convert_returned_streaming_to_dataframe,
-    process_image_with_api2,
+    process_image_with_api,
 ):
     _prompt = """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only, in the case of headers use #. Do not add any commentary."""
 
 
-    _image_id = 'CLD-1850-04-20_page_11_B0C1R2_segment_0'
+    _image_id = 'CLD-1850-04-20_page_10_B0C2R4_segment_0'
 
     _target_image = CLD_image_dict[_image_id]
 
-    CLD_content2 = process_image_with_api2(_target_image['image'], 
+    CLD_content2 = process_image_with_api(_target_image['image'], 
                            # prompt_dict.get(target_image['class']), 
                             _prompt,                       
                             model="mistral/pixtral-12b-2409")
@@ -266,119 +135,269 @@ def _(
 @app.cell
 def _(CLD_content2):
     CLD_content2
+    return
 
+
+@app.cell
+def _(mo):
+    mo.md(
+        """
+        from mistralai import Mistral
+
+        api_key = os.environ["MISTRAL_API_KEY"]
+        client = Mistral(api_key=api_key)
+
+        deleted_count, failures = delete_all_batch_files(client, api_key, 5000)
+
+        # Print results
+        print(f"\nSummary:")
+        print(f"Successfully deleted {deleted_count} files")
+        if failures:
+            print(f"Failed to delete {len(failures)} files:")
+            for failure in failures:
+                print(f"- File ID: {failure['file_id']}, Error: {failure['error']}")
+        """
+    )
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md("""# Format the NCSE testset bounding boxes""")
+    return
+
+
+@app.cell
+def _(assign_columns, basic_box_data, create_reading_order, np, pd):
+    import json
+
+
+    # Initialize lists to store the data
+    data_list = []
+
+    # Read the NDJSON file
+    with open('data/converted/Export  project - NCSE_bbox_testset - 1_11_2025.ndjson', 'r') as file:
+        for line in file:
+            if line.strip():  # Skip empty lines
+                json_obj = json.loads(line)
+
+                # Extract base information that will be repeated for each box
+                base_info = {           
+                    'filename': json_obj['data_row']['external_id'],
+                    'height': json_obj['media_attributes']['height'],
+                    'width': json_obj['media_attributes']['width'],
+                }
+
+                # Extract bounding box information
+                project_key = list(json_obj['projects'].keys())[0]
+                boxes = json_obj['projects'][project_key]['labels'][0]['annotations']['objects']
+
+                # Create a new row for each box
+                for box in boxes:
+                    row = base_info.copy()  # Create a copy of base info
+                    # Calculate x1,y1,x2,y2
+                    x1 = box['bounding_box']['left']
+                    y1 = box['bounding_box']['top']
+                    x2 = x1 + box['bounding_box']['width']
+                    y2 = y1 + box['bounding_box']['height']
+
+                    row.update({
+                        'class': box['name'],
+                        'x1': x1,
+                        'y1': y1,
+                        'x2': x2,
+                        'y2': y2
+                    })
+                    data_list.append(row)
+
+    # Create DataFrame
+    df2 = pd.DataFrame(data_list)
+    df2['class'] = np.where(df2['class']=='text', 'plain text', df2['class'])
+    df2['confidence'] = 1
+    df2['page_id'] = df2['filename'].str.replace(".png", "")
+
+    df2 = basic_box_data(df2)
+
+    # Display the DataFrame
+    df2 = assign_columns(df2)
+
+    df2= create_reading_order(df2)
+
+    df2['box_page_id'] = "B" + df2['page_block'].astype(str) + "C"+df2['column_number'].astype(str)  + "R" + df2['reading_order'].astype(str) 
+    df2['ratio'] = df2['height']/df2['width']  
+    df2
+
+    df2.to_csv('data/ncse_testset_bboxes.csv')
+    return (
+        base_info,
+        box,
+        boxes,
+        data_list,
+        df2,
+        file,
+        json,
+        json_obj,
+        line,
+        project_key,
+        row,
+        x1,
+        x2,
+        y1,
+        y2,
+    )
+
+
+@app.cell
+def _(df2):
+    df2
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md("""The below block only runs if the files have not already been created as it takes about 30 mins and costs money""")
+    return
+
+
+@app.cell
+def _(
+    combine_article_segments,
+    convert_returned_streaming_to_dataframe,
+    crop_and_encode_boxes,
+    decompose_filenames,
+    default_prompt,
+    df2,
+    os,
+    pd,
+    process_image_with_api,
+    tqdm,
+):
+    _prompt_dict = {
+        'plain text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.""",
+        'figure': 'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
+        'table': 'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'
+    }
+
+
+    _save_path = 'data/converted/pixtral_test_resutls.csv'
+
+    if not os.path.exists(_save_path):
+
+        # Create empty lists to store the data
+        _data_list = []
+
+        test_set_folder = 'data/converted/ncse_bbox_test_set'
+
+        _encoded_images = crop_and_encode_boxes(df2, test_set_folder, max_ratio = 1)
+
+        for _image_id, _image_data in tqdm(_encoded_images.items()):
+            # Get the appropriate prompt based on the image class
+            _image_class = _image_data.get('class', 'plain text')
+            _prompt = _prompt_dict.get(_image_class, default_prompt)
+
+            _response = process_image_with_api(_image_data['image'], 
+                                _prompt,                       
+                                model="mistral/pixtral-12b-2409")
+
+            # Create a dictionary for each iteration
+            _extracted_data = convert_returned_streaming_to_dataframe(_response, id=_image_id, custom_id=_image_id)
+
+            # Append the dictionary to the list
+            _data_list.append(_extracted_data)
+
+        # Create DataFrame from the list of dictionaries
+        _df = pd.concat(_data_list, ignore_index=True)
+
+        _df = decompose_filenames(_df)
+
+        test_results_df = combine_article_segments(_df)
+
+        test_results_df.to_csv(_save_path)
+
+    else: 
+        test_results_df = pd.read_csv(_save_path)
+    return test_results_df, test_set_folder
+
+
+@app.cell
+def _(test_results_df):
+    test_results_df
+    return
+
+
+@app.cell
+def _(df2):
+    df2
+    return
+
+
+app._unparsable_cell(
+    r"""
+    # read bbox csv
+    bbox_df = pd.read_cssv('data/ncse_testset_bboxes.csv')
+
+    image_path = 'data/converted/cropped_images'
+    # create the filename properly
+    bbox_df['filename'] = bbox_df['page_id'] +\"_\" +bbox_df['box_page_id'] + \".png\"
+
+
+    # Load bbox dataframe
+    bbox_df = pd.read_parquet(parquet_path)
+
+    for deskew, max_ratio in [True, True, False, False], [1, 1.5, 1, 1.5]:
+
+        file_name = f\"deskew_{str(deskew)}_max_ratio_{str(max_ratio)}\"
+        # Create output filename based on the base folder name
+        base_name = os.path.basename(image_path)
+        output_file = f'data/processed_jobs/{base_name}.csv'
+        
+        # Process the data
+        process_issues_to_jobs(
+            bbox_df=bbox_df,
+            images_folder=image_path,
+            prompt_dict=prompt_dict,
+            client=client,
+            output_file=output_file
+            deskew = deskew,
+            crop_image = False`
+        )
+        
+        print(f\"Completed processing {parquet_file}\")
+
+    print(\"All files processed!\")
+    """,
+    name="_"
+)
+
+
+@app.cell
+def _(df3):
+    df3['filename']
     return
 
 
 @app.cell
 def _():
-    import requests
-
-    def delete_all_batch_files(client, api_key, limit=100):
-        """
-        Delete all files associated with batch processing, handling pagination.
-        
-        Args:
-            client: Mistral client instance
-            api_key: Your Mistral API key
-            limit: Number of files to fetch per page
-        
-        Returns:
-            tuple: (int, list) - Count of deleted files and list of any failed deletions
-        """
-        deleted_count = 0
-        failed_deletions = []
-        
-        try:
-            # Set up headers for requests
-            headers = {
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json'
-            }
-
-            # Handle pagination
-            has_more = True
-            after = None
-
-            while has_more:
-                # List files with pagination
-                params = {'limit': limit}
-                if after:
-                    params['after'] = after
-
-                # Make GET request to list files
-                list_response = requests.get(
-                    'https://api.mistral.ai/v1/files',
-                    headers=headers,
-                    params=params
-                )
-
-                if list_response.status_code != 200:
-                    print(f"Error listing files: Status code {list_response.status_code}")
-                    return deleted_count, failed_deletions
-
-                files_data = list_response.json()
-
-                # Process this page of files
-                for file in files_data.get('data', []):
-                    try:
-                        # Only delete files with purpose "batch"
-                        if file['purpose'] == "batch":
-                            # Make delete request
-                            delete_response = requests.delete(
-                                f'https://api.mistral.ai/v1/files/{file["id"]}',
-                                headers=headers
-                            )
-                            
-                            if delete_response.status_code == 200:
-                                deleted_count += 1
-                                print(f"Successfully deleted file with ID: {file['id']}")
-                            else:
-                                failed_deletions.append({
-                                    'file_id': file['id'],
-                                    'error': f"Status code: {delete_response.status_code}"
-                                })
-                                print(f"Failed to delete file with ID: {file['id']}, Status code: {delete_response.status_code}")
-                                
-                    except Exception as e:
-                        failed_deletions.append({
-                            'file_id': file['id'],
-                            'error': str(e)
-                        })
-                        print(f"Failed to delete file with ID: {file['id']}. Error: {str(e)}")
-
-                # Check if there are more files to process
-                has_more = files_data.get('has_more', False)
-                if has_more and files_data['data']:
-                    after = files_data['data'][-1]['id']
-                else:
-                    has_more = False
-
-            return deleted_count, failed_deletions
-
-        except Exception as e:
-            print(f"Error in process: {str(e)}")
-            return deleted_count, failed_deletions
-    return delete_all_batch_files, requests
+    'page_id', 'box_page_id', 'issue', 'filename', 'class'
+    return
 
 
 @app.cell
-def _(delete_all_batch_files, os):
-    from mistralai import Mistral
+def _(os, pd):
+    #Doesn't actually include any bbox information as this is not'necessary when the image is not cropped
 
-    api_key = os.environ["MISTRAL_API_KEY"]
-    client = Mistral(api_key=api_key)
+    BLN600_bbox = pd.DataFrame({'filename':os.listdir( 'data/BLN600/Images_jpg')})
+    BLN600_bbox['page_id'] = BLN600_bbox['filename'].str.replace('.jpg', '')
+    BLN600_bbox['box_page_id'] = 'B0C1R0' #This is just so the data is parsed properly when it is returned
+    BLN600_bbox['issue'] = 'test'
+    BLN600_bbox['class'] = 'plain text'
+    return (BLN600_bbox,)
 
-    deleted_count, failures = delete_all_batch_files(client, api_key, 5000)
 
-    # Print results
-    print(f"\nSummary:")
-    print(f"Successfully deleted {deleted_count} files")
-    if failures:
-        print(f"Failed to delete {len(failures)} files:")
-        for failure in failures:
-            print(f"- File ID: {failure['file_id']}, Error: {failure['error']}")
-    return Mistral, api_key, client, deleted_count, failure, failures
+@app.cell
+def _(BLN600_bbox):
+    BLN600_bbox
+    return
 
 
 @app.cell

@@ -27,7 +27,7 @@ BLN_image_path = 'data/BLN600/Images_jpg'
 BLN600_bbox = pd.DataFrame({'filename': os.listdir( BLN_image_path)})
 BLN600_bbox['page_id'] = BLN600_bbox['filename'].str.replace('.jpg', '')
 BLN600_bbox['box_page_id'] = 'B0C1R0' #This is just so the data is parsed properly when it is returned
-BLN600_bbox['issue'] = 'test'
+BLN600_bbox['issue'] = 'test_' + ((BLN600_bbox.index // 100) + 1).astype(str)
 BLN600_bbox['class'] = 'plain text'
 
 # read bbox csv
@@ -38,7 +38,7 @@ ncse_bbox['filename'] = ncse_bbox['page_id'] + "_" + ncse_bbox['box_page_id'] + 
 
 # Process datasets
 datasets = [
-    (ncse_image_path, ncse_bbox, 'NCSE'),
+   # (ncse_image_path, ncse_bbox, 'NCSE'),
     (BLN_image_path, BLN600_bbox, 'BLN600')
 ]
 
@@ -59,8 +59,7 @@ for image_path, bbox_df, dataset_name in datasets:
         output_file = f'data/processed_jobs/{file_name}.csv'
 
         # This ensures when the results are downloaded they are saved with the filename that matches the experiment
-        bbox_df['issue'] = file_name
-        
+        bbox_df['issue'] = f'{file_name}_' + ((bbox_df.index // 100) + 1).astype(str)
         # Process the data
         process_issues_to_jobs(
             bbox_df = bbox_df,

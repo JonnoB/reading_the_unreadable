@@ -278,6 +278,9 @@ def combine_article_segments(df):
                  .apply(knit_group_texts)
                  .reset_index())
     
+    result_df['box_page_id'] = "B" + result_df['block'].astype(str) + "C"+result_df['column'].astype(str)  + "R" + result_df['reading_order'].astype(str) 
+    result_df['page_id'] = result_df['issue_id'] + "_page_" + result_df['page_number'].astype(str)
+    
     return result_df
 
 

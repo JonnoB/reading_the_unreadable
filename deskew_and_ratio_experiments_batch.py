@@ -35,7 +35,6 @@ ncse_bbox = pd.read_csv('data/ncse_testset_bboxes.csv')
 
 # create the filename properly
 ncse_bbox['filename'] = ncse_bbox['page_id'] + "_" + ncse_bbox['box_page_id'] + ".png"
-ncse_bbox['issue'] = 'test'
 
 # Process datasets
 datasets = [
@@ -58,6 +57,9 @@ for image_path, bbox_df, dataset_name in datasets:
         file_name = f"{dataset_name}_deskew_{str(deskew)}_max_ratio_{str(max_ratio)}"
         # Create output filename based on the experiment name
         output_file = f'data/processed_jobs/{file_name}.csv'
+
+        # This ensures when the results are downloaded they are saved with the filename that matches the experiment
+        bbox_df['issue'] = file_name
         
         # Process the data
         process_issues_to_jobs(

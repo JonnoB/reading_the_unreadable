@@ -242,14 +242,15 @@ def initialize_log_file(output_folder):
 
 def combine_article_segments(df):
     """
-    Process DataFrame by grouping and knitting text within groups.
+    Process DataFrame by grouping and knitting text within groups, including segment counts and token information.
     
     Args:
         df (pandas.DataFrame): Input DataFrame with columns 'issue_id', 'page_number', 
-                             'block', 'column_number', 'reading_order', 'segment', 'text'
+                             'block', 'column_number', 'reading_order', 'segment', 'text',
+                             'prompt_tokens', 'completion_tokens', 'total_tokens'
     
     Returns:
-        pandas.DataFrame: Processed DataFrame with knitted text
+        pandas.DataFrame: Processed DataFrame with knitted text and aggregated metrics
     """
     # Create a copy of the input DataFrame
     df = df.copy()
@@ -262,7 +263,14 @@ def combine_article_segments(df):
     def knit_group_texts(group):
         text_list = group['content'].tolist()
         knitted_text = knit_string_list(text_list)
-        return pd.Series({'content': knitted_text})
+        
+        return pd.Series({
+            'content': knitted_text,
+            'segment_count': len(group),
+            'prompt_tokens': group['prompt_tokens'].sum(),
+            'completion_tokens': group['completion_tokens'].sum(),
+            'total_tokens': group['total_tokens'].sum()
+        })
     
     # Group and apply the knitting function
     result_df = (df.groupby(['issue_id', 'page_number', 'block', 'column', 

@@ -1,11 +1,11 @@
 import marimo
 
-__generated_with = "0.9.18"
+__generated_with = "0.10.6"
 app = marimo.App(width="medium")
 
 
 @app.cell
-def __():
+def _():
     import marimo as mo
     import pandas as pd
     import numpy as np
@@ -98,7 +98,7 @@ def __():
 
 
 @app.cell
-def __(data_folder, os):
+def _(data_folder, os):
     import wand.image
     from wand.display import display
 
@@ -111,19 +111,19 @@ def __(data_folder, os):
 
 
 @app.cell
-def __():
+def _():
     transcriber_prompt = "You are an expert at transcription. The text is from a 19th century news article. Please transcribe exactly, including linebreaks, the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only."
     return (transcriber_prompt,)
 
 
 @app.cell
-def __(mo):
+def _(mo):
     mo.md(r"""## With deskew""")
     return
 
 
 @app.cell
-def __(BLN_folder, np, os, process_jpeg_folder, transcriber_prompt):
+def _(BLN_folder, np, os, process_jpeg_folder, transcriber_prompt):
     process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
                         output_folder = os.path.join(BLN_folder,'BLN600_deskew'),
                         prompt = transcriber_prompt, 
@@ -153,23 +153,23 @@ app._unparsable_cell(
 
     getWrongAnswers(N = 6, C = 'ABBBBA')
     """,
-    name="__"
+    name="_"
 )
 
 
 @app.cell
-def __():
+def _():
     return
 
 
 @app.cell
-def __(mo):
+def _(mo):
     mo.md(r"""## Without Deskew""")
     return
 
 
 @app.cell
-def __(BLN_folder, np, os, process_jpeg_folder, transcriber_prompt):
+def _(BLN_folder, np, os, process_jpeg_folder, transcriber_prompt):
     process_jpeg_folder(folder_path = 'data/BLN600/Images_jpg', 
                         output_folder =  os.path.join(BLN_folder,'BLN600_ratio_1000'),
                         prompt = transcriber_prompt, 
@@ -188,7 +188,7 @@ def __(BLN_folder, np, os, process_jpeg_folder, transcriber_prompt):
 
 
 @app.cell
-def __():
+def _():
     import evaluate
 
     metric_cer = evaluate.load("cer")
@@ -197,7 +197,7 @@ def __():
 
 
 @app.cell
-def __(BLN_folder, data_folder, load_and_join_texts_as_dataframe, os):
+def _(BLN_folder, data_folder, load_and_join_texts_as_dataframe, os):
     _list_of_folders = [os.path.join(BLN_folder, folder) for folder in ['BLN600_deskew', 'BLN600_deskew_ratio_15', 'BLN600_ratio_1000', 'BLN600_ratio_15', 'BLN600_ratio_10', 'BLN600_deskew_ratio_10', 'american_stories_txt','BLN600_GOT', 'docling'
                                                                        ]]
 
@@ -210,7 +210,7 @@ def __(BLN_folder, data_folder, load_and_join_texts_as_dataframe, os):
 
 
 @app.cell
-def __(compute_metric, df, metric_cer, metric_wer):
+def _(compute_metric, df, metric_cer, metric_wer):
     df['cer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_cer, prediction_col='OCR Text', reference_col='Ground Truth')
     df['wer_ocr'] = df.apply(compute_metric, axis=1, metric =metric_wer, prediction_col='OCR Text', reference_col='Ground Truth')
 
@@ -236,7 +236,7 @@ def __(compute_metric, df, metric_cer, metric_wer):
 
 
 @app.cell
-def __(df):
+def _(df):
     df[['file_name','cer_ocr', 'cer_deskew_1000', 'cer_nodeskew_1000','cer_nodeskew_10', 
         'cer_deskew_10', 'am_stories', 'GOT', 'docling'
        ]].describe()
@@ -244,7 +244,7 @@ def __(df):
 
 
 @app.cell
-def __(df, np, pd, plt, sns):
+def _(df, np, pd, plt, sns):
     _plot_df = df[['file_name',#'cer_ocr', 
                    'cer_deskew_1000', 'cer_nodeskew_1000', 
                    'cer_deskew_10', 'cer_nodeskew_10'#,'cer_nodeskew_15', 'cer_deskew_15',
@@ -313,12 +313,12 @@ def __(df, np, pd, plt, sns):
 
 
 @app.cell
-def __():
+def _():
     return
 
 
 @app.cell
-def __(mo):
+def _(mo):
     mo.md(
         """
         df2 = df.copy()

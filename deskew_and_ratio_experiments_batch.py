@@ -25,7 +25,7 @@ BLN_image_path = 'data/BLN600/Images_jpg'
 
 #Doesn't actually include any bbox information as this is not'necessary when the image is not cropped
 BLN600_bbox = pd.DataFrame({'filename': os.listdir( BLN_image_path)})
-BLN600_bbox['page_id'] = BLN600_bbox['filename'].str.replace('.jpg', '')
+BLN600_bbox['page_id'] = BLN600_bbox['filename'].str.replace('.jpg', '') + "_page_1"
 BLN600_bbox['box_page_id'] = 'B0C1R0' #This is just so the data is parsed properly when it is returned
 BLN600_bbox['issue'] = 'test_' + ((BLN600_bbox.index // 100) + 1).astype(str)
 BLN600_bbox['class'] = 'plain text'

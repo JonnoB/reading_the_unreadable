@@ -38,14 +38,21 @@ ncse_bbox['filename'] = ncse_bbox['page_id'] + "_" + ncse_bbox['box_page_id'] + 
 
 # Process datasets
 datasets = [
-   # (ncse_image_path, ncse_bbox, 'NCSE'),
+    (ncse_image_path, ncse_bbox, 'NCSE'),
     (BLN_image_path, BLN600_bbox, 'BLN600')
 ]
 
 experiments = list(zip(
-    [True, True, True, False, False, False],
-    [1, 1.5, 2, 1, 1.5, 2]
+    [True, True, True, True, False, False, False, False],
+    [1, 1.5, 2, 1000, 1, 1.5, 2, 1000]
 ))
+
+#This needs to be here as I forgot to do the no crop
+experiments = list(zip(
+    [True,  False,],
+    [1000, 1000]
+))
+
 
 for image_path, bbox_df, dataset_name in datasets:
     print(f"Processing dataset: {dataset_name}")

@@ -47,11 +47,6 @@ experiments = list(zip(
     [1, 1.5, 2, 1000, 1, 1.5, 2, 1000]
 ))
 
-#This needs to be here as I forgot to do the no crop
-experiments = list(zip(
-    [True,  False,],
-    [1000, 1000]
-))
 
 
 for image_path, bbox_df, dataset_name in datasets:

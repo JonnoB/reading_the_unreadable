@@ -16,11 +16,12 @@ dataframe_dir = os.path.join(experiment_dir, 'dataframe')
 os.makedirs(dataframe_dir, exist_ok=True)
 
 experiments = list(zip(
-    [True, True, True, False, False, False],
-    [1, 1.5, 2, 1, 1.5, 2]
+    [True, True, True,True, False, False, False, False],
+    [1, 1.5, 2,1000, 1, 1.5, 2,1000]
 ))
 
-for dataset in ['BLN600']:
+
+for dataset in ['NCSE','BLN600']:
     for deskew, max_ratio in experiments:
         file_name = f"{dataset}_deskew_{str(deskew)}_max_ratio_{str(max_ratio)}"
         
@@ -55,9 +56,9 @@ for dataset in ['BLN600']:
             
             # Convert all collected data to dataframe
             content_df = convert_returned_json_to_dataframe(all_json_data)
-            if dataset =='BLN600':
-                content_df['custom_id'] = content_df['custom_id'].str.replace("_B", "_page_1_B")
-            content_df.to_csv('test.csv')
+            #if dataset =='BLN600':
+            #    content_df['custom_id'] = content_df['custom_id'].str.replace("_B", "_page_1_B")
+            #content_df.to_csv('test.csv')
             # Post processing
             content_df = decompose_filenames(content_df)
             content_df = combine_article_segments(content_df)

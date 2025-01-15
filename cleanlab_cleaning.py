@@ -9,7 +9,7 @@ def __():
     from cleanlab.object_detection.filter import find_label_issues
     from cleanlab.object_detection.rank import get_label_quality_scores, compute_badloc_box_scores
     from cleanlab.object_detection.summary import visualize
-    from objdet_dataset_helpers import create_image_list
+    from archived.objdet_dataset_helpers import create_image_list
     from helper_functions import scale_bbox
 
     import os

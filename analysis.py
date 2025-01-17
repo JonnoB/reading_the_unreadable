@@ -19,6 +19,12 @@ def _():
     import seaborn as sns
     import matplotlib.pyplot as plt
 
+    from dotenv import load_dotenv, find_dotenv
+
+    load_dotenv(find_dotenv(usecwd=True))
+
+    save_figs_path = os.getenv('save_figs')
+
     results_folder = "data/model_performance"
 
     BLN600_GT_path = "data/BLN600/Ground Truth"
@@ -46,6 +52,8 @@ def _():
         cer,
         data_folder,
         dataframe_to_latex_with_bold_extreme,
+        find_dotenv,
+        load_dotenv,
         load_txt_files_to_dataframe,
         np,
         os,
@@ -53,6 +61,7 @@ def _():
         plt,
         reshape_metrics,
         results_folder,
+        save_figs_path,
         sns,
     )
 
@@ -126,23 +135,47 @@ def _(GT_df, cer, os, pd):
 
 
 @app.cell
-def _(experiment_df, np, plt, sns):
+def _(experiment_df, np, os, pd, plt, save_figs_path, sns):
     exp_median_cer = experiment_df[['dataset', 'deskew', 'max_ratio', 'cer_score']].groupby(['dataset', 'deskew', 'max_ratio'])['cer_score'].median().reset_index()
-    plt.title("Comparison of Deskew and\nmaximum allowed width to length ratio")
+
+    exp_median_cer['Average'] = 'median'
+
+    exp_mean_cer = experiment_df[['dataset', 'deskew', 'max_ratio', 'cer_score']].groupby(['dataset', 'deskew', 'max_ratio'])['cer_score'].mean().reset_index()
+
+    exp_mean_cer['Average'] = 'mean'
+
+    _plot_df = pd.concat([exp_median_cer, exp_mean_cer], ignore_index=True)
+
+    _plot_df['max_ratio2'] = np.where(_plot_df['max_ratio']==1000, 'Inf', _plot_df['max_ratio'])
+
+    g = sns.relplot(data = _plot_df, x = 'max_ratio2', y = 'cer_score', hue = 'dataset', style = 'deskew', 
+                col = 'Average', kind = 'line')
 
 
-    exp_median_cer['max_ratio2'] = np.where(exp_median_cer['max_ratio']==1000, 'Inf', exp_median_cer['max_ratio'])
+    g.fig.suptitle("The Effect of Deskew and Image Cropping on CER scores", fontsize=16, y = 1.01)
 
-    sns.lineplot(data = exp_median_cer, x = 'max_ratio2', y = 'cer_score', hue = 'dataset', style = 'deskew')
-    plt.xlabel ('Maximum length to width ratio')
 
-    plt.ylabel("Median CER score")
-    return (exp_median_cer,)
+    g.set_axis_labels('Maximum length to width ratio', "CER score")
+
+
+    plt.savefig(os.path.join(save_figs_path,'deskew_crop_experiment.png'), 
+                bbox_inches='tight', 
+                dpi=300, 
+                pad_inches=0.5)  # Adjust padding
+
+    plt.show()
+    return exp_mean_cer, exp_median_cer, g
 
 
 @app.cell
-def _(exp_median_cer):
-    exp_median_cer.loc[exp_median_cer['dataset'] == 'NCSE', ['cer_score', 'deskew', 'max_ratio']].describe()
+def _(exp_mean_cer):
+    exp_mean_cer.loc[exp_mean_cer['dataset'] != 'NCSE', ['cer_score', 'deskew', 'max_ratio']]
+    return
+
+
+@app.cell
+def _():
+    1-0.04/0.29
     return
 
 
@@ -236,6 +269,150 @@ def _(dataframe_to_latex_with_bold_extreme, reshape_metrics, results_df):
 @app.cell
 def _(reshape_metrics, results_df):
     reshape_metrics(results_df,  spread_col='dataset', agg_func='std', round_digits=2)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        # Example image
+
+        it is often nice to see an example of the algoritm in action. the below takes a specific image, and calculates the CER for each model. 
+
+        The paper will then show the image and the CER Scores and the supplementary material will show the full texts
+        """
+    )
+    return
+
+
+@app.cell
+def _(results_df):
+    results_df.loc[results_df['file_name']=='NS2_1843-04-01_page_4_B0C5R42',['model', 'cer_score'] ].round(2)
+    return
+
+
+@app.cell
+def _(results_df):
+    results_df.loc[results_df['file_name'].isin(['EWJ_1859-03-01_page_17_B0C1R2', 'NS2_1843-04-01_page_4_B0C5R42']),
+    ['file_name','model', 'cer_score'] ].round(2)
+    return
+
+
+@app.cell
+def _(results_df):
+    example_df = results_df.loc[results_df['file_name'].isin(['EWJ_1859-03-01_page_17_B0C1R2', 'NS2_1843-04-01_page_4_B0C5R42']),
+    ['file_name','model', 'cer_score'] ].round(2)
+
+    example_df['file_name'] = example_df['file_name'].str.extract('^([^_]*)')
+
+    example_df
+    return (example_df,)
+
+
+@app.cell
+def _(dataframe_to_latex_with_bold_extreme, example_df, reshape_metrics):
+    example_table = reshape_metrics(example_df,  spread_col='file_name', agg_func='mean', round_digits=2).reset_index()
+
+    example_table_latex = dataframe_to_latex_with_bold_extreme(example_table, extreme='min',  model_column='model', caption ='xxxx',
+                                        label = 'tab:example_results')
+
+    print(example_table)
+    example_table_latex
+    return example_table, example_table_latex
+
+
+@app.cell
+def _(results_df):
+    output_contents = results_df.loc[results_df['file_name'].isin(
+        ['EWJ_1859-03-01_page_17_B0C1R2', 'NS2_1843-04-01_page_4_B0C5R42']),['file_name','model','cer_score', 'content'] ]
+
+    output_contents['file_name'] = output_contents['file_name'].str.extract('^([^_]*)')
+
+    output_contents['content'] = output_contents['content'].str.replace('\n', ' ').str.replace('\r', ' ').str.replace('- ', '')
+
+    output_contents['result'] = output_contents['content'].str[:200]
+    output_contents.loc[output_contents['file_name']=='EWJ', ['model', 'result']]
+    return (output_contents,)
+
+
+@app.cell
+def _(output_contents):
+    output_contents.loc[output_contents['file_name']!='EWJ', ['model', 'result']]
+    return
+
+
+@app.cell
+def _(output_contents):
+    from tabulate import tabulate
+
+    # Get the specific rows you want
+    _table_data = output_contents.loc[output_contents['file_name']!='EWJ', ['model','cer_score', 'result']].round(2)
+
+    # Create the LaTeX table manually
+    _latex_table = (
+        r'\begin{table}[h]' + '\n' +
+        r'\caption{The first 200 characters of the Northern Star Example}' + '\n' +  # Add caption
+        r'\label{tab:your_label_here}' + '\n' +      # Add label
+        r'\small' + '\n' +
+        r'\begin{tabular}{p{3cm}p{2cm}p{12cm}}' + '\n' +
+        r'\hline' + '\n' +
+        r'Model & CER & Result \\' + '\n' +
+        r'\hline' + '\n'
+    )
+
+    # Add each row manually
+    for _, _row in _table_data.iterrows():
+        _latex_table += f"{_row['model']} & {_row['cer_score']} & {_row['result']} \\\\\n"
+
+    _latex_table += (
+        r'\hline' + '\n' +
+        r'\end{tabular}' + '\n' +
+        r'\end{table}'
+    )
+
+    print(_latex_table)
+    return (tabulate,)
+
+
+@app.cell
+def _(output_contents):
+    # Get the specific rows you want
+    _table_data = output_contents.loc[output_contents['file_name']!='EWJ', ['model','cer_score', 'result']].round(2)
+
+    # Create the LaTeX table manually
+    _latex_table = (
+        r'\begin{table}[h]' + '\n' +
+        r'\small' + '\n' +
+        r'\begin{tabular}{p{3cm}p{2cm}p{12cm}}' + '\n' +
+        r'\hline' + '\n' +
+        r'Model & CER & Result \\' + '\n' +
+        r'\hline' + '\n'
+    )
+
+    # Add each row manually
+    for _, _row in _table_data.iterrows():
+        _latex_table += f"{_row['model']} & {_row['cer_score']} & {_row['result']} \\\\\n"
+
+    _latex_table += (
+        r'\hline' + '\n' +
+        r'\end{tabular}' + '\n' +
+        r'\end{table}'
+    )
+
+    print(_latex_table)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        # Performance of the paragraph matcher
+
+        I 
+        """
+    )
     return
 
 

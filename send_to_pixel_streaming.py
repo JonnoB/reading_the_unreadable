@@ -24,7 +24,7 @@ def _(mo):
 def _():
     import os
     import pandas as pd
-    from send_to_lm_functions import process_image_with_api, crop_and_encode_boxes, decompose_filenames, combine_article_segments, convert_returned_streaming_to_dataframe, process_image_with_api, delete_all_batch_files
+    from send_to_lm_functions import process_image_with_api, crop_and_encode_boxes, decompose_filenames, combine_article_segments, convert_returned_streaming_to_dataframe, delete_all_batch_files
     from bbox_functions import plot_boxes_on_image
     from tqdm import tqdm
     import numpy as np
@@ -328,6 +328,41 @@ def _(test_results_df):
 @app.cell
 def _(df2):
     df2
+    return
+
+
+@app.cell
+def _(process_image_with_api):
+
+
+    from send_to_lm_functions import deskew_image, encode_pil_image
+    from PIL import Image
+
+
+    _prompt = """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary."""
+
+    image_class = 'plain text'
+
+    example_image = Image.open('data/example_for_paper/NS2-1843-04-01_page_4_excerpt.png')
+
+    example_image = deskew_image(example_image)
+
+    _key, _encoded_example_dict = encode_pil_image(example_image, "NS2-1843-04-01_page_4", "B0C1R0", 0, image_class)
+
+    returned_example = process_image_with_api(_encoded_example_dict['image'], _prompt,  model="mistral/pixtral-12b-2409")
+    return (
+        Image,
+        deskew_image,
+        encode_pil_image,
+        example_image,
+        image_class,
+        returned_example,
+    )
+
+
+@app.cell
+def _(returned_example):
+    returned_example
     return
 
 

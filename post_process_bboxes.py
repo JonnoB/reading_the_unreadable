@@ -33,6 +33,7 @@ for file in all_files:
     bbox_df = pd.read_parquet(os.path.join(input_folder, file))
     
     bbox_df['page_id'] = bbox_df['filename'].str.replace('.png', "")
+    bbox_df['class'] = np.where(bbox_df['class']=='plain text', 'text', bbox_df['class'])
     bbox_df = preprocess_bbox(bbox_df, 10)
     
     bbox_df.to_parquet(output_file_path)

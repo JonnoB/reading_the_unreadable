@@ -610,17 +610,17 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
                    and 'class' (string)
     prompt_dict: dict, mapping image classes to their specific prompts
                 e.g., {'table': 'Describe this table', 'figure': 'Describe this figure'}
-                If a class is not found in prompt_dict, uses default 'plain text' prompt
+                If a class is not found in prompt_dict, uses default 'text' prompt
 
     Returns:
     str: The JSONL content as a string
     """
     jsonl_lines = []
-    default_prompt = prompt_dict.get('plain text', 'Describe this text')
+    default_prompt = prompt_dict.get('text', 'Describe this text')
 
     for image_id, image_data in encoded_images.items():
         # Get the appropriate prompt based on the image class
-        image_class = image_data.get('class', 'plain text')
+        image_class = image_data.get('class', 'text')
         prompt = prompt_dict.get(image_class, default_prompt)
 
         entry = {
@@ -661,7 +661,7 @@ def create_batch_job(client, base_filename, encoded_images, prompt_dict, job_typ
         encoded_images: Encoded image data
         prompt_dict: dict, mapping image classes to their specific prompts
                     e.g., {'table': 'Describe this table', 'figure': 'Describe this figure'}
-                    If a class is not found in prompt_dict, uses default 'plain text' prompt
+                    If a class is not found in prompt_dict, uses default 'text' prompt
 
     Returns:
         tuple: (job_id, original_filename)
@@ -715,7 +715,7 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
     images_folder (str): Path to folder containing images
     prompt_dict: dict, mapping image classes to their specific prompts
             e.g., {'table': 'Describe this table', 'figure': 'Describe this figure'}
-            If a class is not found in prompt_dict, uses default 'plain text' prompt
+            If a class is not found in prompt_dict, uses default 'text' prompt
     client: API client instance
     output_file (str): Path to CSV file storing job information
     Returns:
@@ -725,8 +725,8 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
     if not os.path.exists(images_folder):
         raise FileNotFoundError(f"Images folder not found: {images_folder}")
     
-    if not isinstance(prompt_dict, dict) or 'plain text' not in prompt_dict:
-        raise ValueError("prompt_dict must be a dictionary containing 'plain text' key")
+    if not isinstance(prompt_dict, dict) or 'text' not in prompt_dict:
+        raise ValueError("prompt_dict must be a dictionary containing 'text' key")
     
     # Create output directory if it doesn't exist
     os.makedirs(os.path.dirname(output_file), exist_ok=True)

@@ -73,12 +73,12 @@ def _(CLD_sub):
 @app.cell
 def _():
     prompt_dict = {
-        'plain text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only, in the case of headers use #. Do not add any commentary.""",
+        'text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only, in the case of headers use #. Do not add any commentary.""",
         'figure': 'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
         'table': 'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'
     }
 
-    default_prompt = prompt_dict.get('plain text', 'Describe this text')
+    default_prompt = prompt_dict.get('text', 'Describe this text')
     return default_prompt, prompt_dict
 
 
@@ -212,7 +212,7 @@ def _(assign_columns, basic_box_data, create_reading_order, np, pd):
 
     # Create DataFrame
     df2 = pd.DataFrame(data_list)
-    df2['class'] = np.where(df2['class']=='text', 'plain text', df2['class'])
+    df2['class'] = np.where(df2['class']=='text', 'text', df2['class'])
     df2['confidence'] = 1
     df2['page_id'] = df2['filename'].str.replace(".png", "")
 
@@ -273,7 +273,7 @@ def _(
     tqdm,
 ):
     _prompt_dict = {
-        'plain text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.""",
+        'text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.""",
         'figure': 'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
         'table': 'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'
     }
@@ -292,7 +292,7 @@ def _(
 
         for _image_id, _image_data in tqdm(_encoded_images.items()):
             # Get the appropriate prompt based on the image class
-            _image_class = _image_data.get('class', 'plain text')
+            _image_class = _image_data.get('class', 'text')
             _prompt = _prompt_dict.get(_image_class, default_prompt)
 
             _response = process_image_with_api(_image_data['image'], 
@@ -341,7 +341,7 @@ def _(process_image_with_api):
 
     _prompt = """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary."""
 
-    image_class = 'plain text'
+    image_class = 'text'
 
     example_image = Image.open('data/example_for_paper/NS2-1843-04-01_page_4_excerpt.png')
 

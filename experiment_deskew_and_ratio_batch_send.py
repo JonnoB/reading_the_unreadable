@@ -10,7 +10,7 @@ client = Mistral(api_key=api_key)
 
 # Prompt dictionary
 prompt_dict = {
-    'plain text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.""",
+    'text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.""",
     'figure': 'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
     'table': 'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'
 }
@@ -28,7 +28,7 @@ BLN600_bbox = pd.DataFrame({'filename': os.listdir( BLN_image_path)})
 BLN600_bbox['page_id'] = BLN600_bbox['filename'].str.replace('.jpg', '') + "_page_1"
 BLN600_bbox['box_page_id'] = 'B0C1R0' #This is just so the data is parsed properly when it is returned
 BLN600_bbox['issue'] = 'test_' + ((BLN600_bbox.index // 100) + 1).astype(str)
-BLN600_bbox['class'] = 'plain text'
+BLN600_bbox['class'] = 'text'
 
 # read bbox csv
 ncse_bbox = pd.read_csv('data/ncse_testset_bboxes.csv')

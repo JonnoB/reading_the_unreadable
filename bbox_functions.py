@@ -583,7 +583,7 @@ def basic_box_data(df):
     df['center_y'] = df['height'] + df['y1']
     
     # Calculate the column width to get the total number of columns on the page
-    df_text = df.loc[df['class'].isin(['plain text']), ['page_id', 'width']].copy()
+    df_text = df.loc[df['class'].isin(['text']), ['page_id', 'width']].copy()
     df_text = df_text.groupby('page_id')['width'].median().rename('median_box_width')
     df = df.join(df_text, on = 'page_id')
     
@@ -621,14 +621,14 @@ def preprocess_bbox(df, min_height = 10):
     bbox_df['class'] = np.where((bbox_df['column_counts']>1) & 
                                 (bbox_df['column_number']!=0) &
                                 (~bbox_df['class'].isin(['figure', 'table'])),  # Close the condition parenthesis here
-                                'plain text',  # Value if condition is True
+                                'text',  # Value if condition is True
                                 bbox_df['class'])  # Value if condition is False
     
     #Change class when there is only 1 column
     bbox_df['class'] = np.where((bbox_df['column_counts']==1) & 
                                 (bbox_df['column_number']!=0) &
                                 (~bbox_df['class'].isin(['figure', 'table', 'title'])),  # Close the condition parenthesis here
-                                'plain text',  # Value if condition is True
+                                'text',  # Value if condition is True
                                 bbox_df['class'])  # Value if condition is False
     
     #Temporary to merge overlapping boxes
@@ -642,8 +642,11 @@ def preprocess_bbox(df, min_height = 10):
     bbox_df['height'] = bbox_df['y2'] - bbox_df['y1']  
     bbox_df = bbox_df[bbox_df['height'] >= min_height]
     
+    #The merging has been removed, because although it is probably more efficient it means that the 
+    #Reconstruction of articles is more difficult.
+
     #remove small bounding boxes to make sending to LLM more efficient and results in larger text blocks
-    bbox_df = merge_boxes_within_column_width(bbox_df)
+    #bbox_df = merge_boxes_within_column_width(bbox_df)
     
     #due to merging re-do reading order
     bbox_df = create_reading_order(bbox_df)
@@ -684,7 +687,7 @@ def plot_boxes_on_image(df, image_path, figsize=(15,15), show_reading_order=Fals
     Notes:
     ------
     - The function uses predefined colors for specific classes:
-        * 'plain text': Red
+        * 'text': Red
         * 'title': Green
         * 'figure': Blue
     - Additional classes are assigned colors automatically using a rainbow colormap.
@@ -703,7 +706,7 @@ def plot_boxes_on_image(df, image_path, figsize=(15,15), show_reading_order=Fals
 
     # Define fixed colors for specific classes
     fixed_colors = {
-        'plain text': '#FF0000',  # Red
+        'text': '#FF0000',  # Red
         'title': '#00FF00',       # Green
         'figure': '#0000FF'       # Blue
     }

@@ -147,7 +147,7 @@ def _(bbox_df):
 
 @app.cell
 def _():
-    prompt_dict = {'plain text':"You are an expert at transcription. The text is from a 19th century English newspaper. Please transcribe exactly, including linebreaks, the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only.",
+    prompt_dict = {'text':"You are an expert at transcription. The text is from a 19th century English newspaper. Please transcribe exactly, including linebreaks, the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only.",
                   'figure':'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
                   'table':'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'}
     return (prompt_dict,)

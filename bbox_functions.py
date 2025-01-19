@@ -454,10 +454,10 @@ def merge_overlapping_boxes(df, min_overlap_percent=50):
     
     return pd.DataFrame(merged_boxes)
 
-def merge_boxes_within_column_width(df, width_multiplier=1.5):
+def merge_boxes_within_column_width(df, width_multiplier=1):
     """
     Merge bounding boxes that are not 'figure' or 'table' if the merged height doesn't exceed
-    x times the column_width, maintaining reading order and working with multiple pages.
+    x times the column_width and classes match, maintaining reading order and working with multiple pages.
 
     Parameters:
     df: DataFrame with columns x1,x2,y1,y2,center_x,center_y,column_number,column_width,
@@ -500,8 +500,9 @@ def merge_boxes_within_column_width(df, width_multiplier=1.5):
                     # Calculate potential merged box height
                     merged_height = max(row['y2'], current_box['y2']) - min(row['y1'], current_box['y1'])
 
-                    # Check if merge would exceed height limit
-                    if merged_height <= row['column_width'] * width_multiplier:
+                    # Check if merge would exceed height limit and that the classes are the same
+                    if (merged_height <= row['column_width'] * width_multiplier and current_box['class'] == row['class']):  
+
                         # Merge boxes
                         current_box['x1'] = min(current_box['x1'], row['x1'])
                         current_box['x2'] = max(current_box['x2'], row['x2'])
@@ -593,10 +594,11 @@ def basic_box_data(df):
 
     return df
 
-def preprocess_bbox(df, min_height = 10):
+def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5):
 
     """ 
-    This function performs all the preprocessing on the bounding boxes to make them ready for sending image crops to the image-to-text model. 
+    This function performs all the post-processing on the bounding boxes to clean them up after being produced by DOCLAyout-Yolo
+    and to make them ready for sending image crops to the image-to-text model. 
     The function assumes that the bounding boxes have been made by DocLayout-yolo. Other Yolo models may also work but this has not been tested.
     The function is a wrapper for functions from the bbox_functions module
     
@@ -617,23 +619,33 @@ def preprocess_bbox(df, min_height = 10):
     
     bbox_df = assign_columns(bbox_df)
     
+
+    """ 
+    This logic has been changed as it looks like keeping titles will make splitting up texts a lot easier and 
+    that titles are pretty reliable if you do a little post processing.
     # change class when there is more than one column
     bbox_df['class'] = np.where((bbox_df['column_counts']>1) & 
                                 (bbox_df['column_number']!=0) &
-                                (~bbox_df['class'].isin(['figure', 'table'])),  # Close the condition parenthesis here
+                               (~bbox_df['class'].isin(['figure', 'table'])),
                                 'text',  # Value if condition is True
                                 bbox_df['class'])  # Value if condition is False
     
     #Change class when there is only 1 column
     bbox_df['class'] = np.where((bbox_df['column_counts']==1) & 
                                 (bbox_df['column_number']!=0) &
-                                (~bbox_df['class'].isin(['figure', 'table', 'title'])),  # Close the condition parenthesis here
+                                (~bbox_df['class'].isin(['figure', 'table', 'title'])), 
                                 'text',  # Value if condition is True
                                 bbox_df['class'])  # Value if condition is False
-    
-    #Temporary to merge overlapping boxes
+    """
+    # This re-labels everything that is not text, table, or figure as title.
+    bbox_df['class'] = np.where((~bbox_df['class'].isin(['figure', 'table', 'text'])), 
+                                'title',  # Value if condition is True
+                                bbox_df['class'])  # Value if condition is False
+
     bbox_df= create_reading_order(bbox_df)
     #Remove overlaps by adjusting the y2 coordinate to the subsequent bounding box
+    # This causes boxes that overlap another box to bring there lower bound up to the top of the subsequent box
+    # This can make large boxes much smaller, and results in overlaps being removed
     bbox_df = adjust_y2_coordinates(bbox_df)
     #adjust the x limits to the column width if box is narrower than the column
     bbox_df = adjust_x_coordinates(bbox_df)
@@ -641,14 +653,15 @@ def preprocess_bbox(df, min_height = 10):
     # Filter out boxes that are too small after y2 adjustment
     bbox_df['height'] = bbox_df['y2'] - bbox_df['y1']  
     bbox_df = bbox_df[bbox_df['height'] >= min_height]
-    
-    #The merging has been removed, because although it is probably more efficient it means that the 
-    #Reconstruction of articles is more difficult.
 
     #remove small bounding boxes to make sending to LLM more efficient and results in larger text blocks
-    #bbox_df = merge_boxes_within_column_width(bbox_df)
+    if width_multiplier is not None:
+        bbox_df = merge_boxes_within_column_width(bbox_df, width_multiplier=width_multiplier)
+
+    # Adjust y2 again as the box deletion and merging has changed boundaries
+    bbox_df = adjust_y2_coordinates(bbox_df)
     
-    #due to merging re-do reading order
+    #due to merging and deletion re-do reading order
     bbox_df = create_reading_order(bbox_df)
     
     #add in bbox ID

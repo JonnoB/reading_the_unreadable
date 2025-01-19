@@ -1,5 +1,5 @@
 """ 
-This post-processes all the bounding boxes so that they are cleaned up and standardised with reading order etcetera.
+This post-processes all the bounding boxes from DOCLayout-Yolo so that they are cleaned up and standardised with reading order etcetera.
 
 
 """
@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 import os
 
-from bbox_functions import preprocess_bbox
+from bbox_functions import postprocess_bbox
 
 
 
@@ -33,7 +33,9 @@ for file in all_files:
     bbox_df = pd.read_parquet(os.path.join(input_folder, file))
     
     bbox_df['page_id'] = bbox_df['filename'].str.replace('.png', "")
-    bbox_df['class'] = np.where(bbox_df['class']=='plain text', 'text', bbox_df['class'])
-    bbox_df = preprocess_bbox(bbox_df, 10)
+    #Renames due to DOCLayout-Yolo naming conventions, having a single word class is more convenient for when I create
+    #a custom ID to send to LM... yes I could use a code, but this is the choice I have made.
+    bbox_df['class'] = np.where(bbox_df['class']=='plain text', 'text', bbox_df['class']) 
+    bbox_df = postprocess_bbox(bbox_df, 10, 1.5)
     
     bbox_df.to_parquet(output_file_path)

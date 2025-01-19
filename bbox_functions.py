@@ -223,6 +223,8 @@ def assign_columns(articles_df, width_overlap_threshold=0.1):
     articles_df['column_number'] = None
     articles_df['c1'] = None  # Left column edge
     articles_df['c2'] = None  # Right column edge
+
+    articles_df['column_counts'] = articles_df['column_counts'].fillna(1)
     
     for page_id in tqdm(articles_df['page_id'].unique(), desc="Assigning article columns in pages"):
         # Get print area info for this page from the first row of the page
@@ -231,7 +233,6 @@ def assign_columns(articles_df, width_overlap_threshold=0.1):
         
         #fills NA values with 1, this prevents issues later in this function...
         # I hope it doesn't have some crazy knock on effect
-        articles_df['column_counts'] = articles_df['column_counts'].fillna(1)
 
         # Calculate column width and boundaries
         column_width = page_info['print_width'] / page_info['column_counts']

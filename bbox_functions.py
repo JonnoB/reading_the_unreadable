@@ -594,7 +594,7 @@ def basic_box_data(df):
 
     return df
 
-def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5):
+def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5, remove_abandon = True):
 
     """ 
     This function performs all the post-processing on the bounding boxes to clean them up after being produced by DOCLAyout-Yolo
@@ -611,8 +611,11 @@ def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5):
     bbox_all_df = basic_box_data(bbox_all_df)
     
     bbox_all_df = reclassify_abandon_boxes(bbox_all_df, top_fraction=0.1)
+
+    bbox_df = bbox_all_df.copy()
     
-    bbox_df = bbox_all_df.loc[bbox_all_df['class']!='abandon'].copy()
+    if remove_abandon:
+        bbox_df = bbox_all_df.loc[bbox_all_df['class']!='abandon'].copy()
     
     # After re-classifying boxes as abandon and dropping the abandon boxes re-calculate the print area which should have changed
     bbox_df = print_area_meta(bbox_df)

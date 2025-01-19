@@ -12,9 +12,11 @@ import os
 from bbox_functions import postprocess_bbox
 
 
+# Need to make it easier/clearer to have a mode which is for creating fine-tuning boxes vs boxes for final use
+
 
 input_folder = 'data/periodical_bboxes/raw'
-output_folder = 'data/periodical_bboxes/post_process'
+output_folder = 'data/periodical_bboxes/post_process_raw'
 
 os.makedirs(output_folder, exist_ok=True)
 
@@ -36,6 +38,6 @@ for file in all_files:
     #Renames due to DOCLayout-Yolo naming conventions, having a single word class is more convenient for when I create
     #a custom ID to send to LM... yes I could use a code, but this is the choice I have made.
     bbox_df['class'] = np.where(bbox_df['class']=='plain text', 'text', bbox_df['class']) 
-    bbox_df = postprocess_bbox(bbox_df, 10, 1.5)
+    bbox_df = postprocess_bbox(bbox_df, 10, width_multiplier= None, remove_abandon=False)
     
     bbox_df.to_parquet(output_file_path)

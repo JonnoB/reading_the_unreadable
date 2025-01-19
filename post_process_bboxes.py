@@ -19,7 +19,7 @@ output_folder = 'data/periodical_bboxes/post_process'
 os.makedirs(output_folder, exist_ok=True)
 
 all_files = os.listdir(input_folder)
-all_files = ['Publishers_Circular_issue_PDF_files_1040.parquet']
+#all_files = ['Publishers_Circular_issue_PDF_files_1040.parquet']
 
 for file in all_files:
     output_file_path = os.path.join(output_folder, file)

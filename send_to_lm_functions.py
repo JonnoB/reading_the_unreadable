@@ -625,7 +625,6 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
 
         entry = {
             "custom_id": image_id,
-            "image_class": image_class,  # Added as separate field
             "body": {
                 "max_tokens": max_tokens,
                 "messages": [

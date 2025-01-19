@@ -410,7 +410,7 @@ def _(mo):
         r"""
         # Performance of the paragraph matcher
 
-        I 
+        I
         """
     )
     return

@@ -434,11 +434,27 @@ def pad_wide_image(cv2_image):
     )
 
 def encode_pil_image(pil_image, page_id, box_page_id, segment_num, image_class):
-    """Encode PIL image to base64 and create dictionary entry."""
+    """
+    Encodes a PIL image to base64 format and creates a dictionary entry with image metadata.
+
+    Args:
+        pil_image (PIL.Image): The PIL Image object to be encoded.
+        page_id (str): Identifier for the page containing the image.
+        box_page_id (str): Identifier for the box/region within the page format B C R.
+        segment_num (int): Segment number of the image referencing the cropped bounding box.
+        image_class (str): Classification or category of the image.
+
+    Returns:
+        tuple: A tuple containing:
+            - str: A unique key formatted as "{page_id}_{image_class}_{box_page_id}_segment_{segment_num}"
+            - dict: A dictionary containing:
+                - 'image': Base64 encoded string of the PNG image
+                - 'class': The image classification
+    """
     buffered = BytesIO()
     pil_image.save(buffered, format="PNG")
     
-    key = f"{page_id}_{box_page_id}_segment_{segment_num}"
+    key = f"{page_id}_{image_class}_{box_page_id}_segment_{segment_num}"
     return key, {
         'image': base64.b64encode(buffered.getvalue()).decode('utf-8'),
         'class': image_class
@@ -1027,8 +1043,10 @@ def parse_filename(filename):
     # Get page number
     page_number = int(parts[0])
 
+    class_info = parts[1]
+
     # Get position info (B0C1R2)
-    position_info = parts[1]
+    position_info = parts[2]
 
     # Extract B, C, R components
     block = int(position_info.split('B')[1].split('C')[0])
@@ -1036,11 +1054,12 @@ def parse_filename(filename):
     reading_order = int(position_info.split('R')[1])
 
     # Get segment number
-    segment = int(parts[3])
+    segment = int(parts[4])
 
     return {
         'issue_id': issue_id,
         'page_number': page_number,
+        'class':class_info,
         'block': block,
         'column': column,
         'reading_order': reading_order,

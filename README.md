@@ -48,5 +48,4 @@ The scripts and ipynb to measure the performance of the alternative models can b
 # Note
 For package management I used the uv library from astral. It is super fast an avoids dependency issues.
 
-- The deskew and square crop is in process_images, DO NOT DELETE!
 - example plotting is in sketching_postprocess_and_plot.py

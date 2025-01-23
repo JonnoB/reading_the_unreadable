@@ -273,7 +273,7 @@ def combine_article_segments(df):
         })
     
     # Group and apply the knitting function
-    result_df = (df.groupby(['issue_id', 'page_number', 'block', 'column', 
+    result_df = (df.groupby(['issue_id', 'page_number', 'block', 'column', 'class',
                             'reading_order'])
                  .apply(knit_group_texts)
                  .reset_index())
@@ -1081,6 +1081,24 @@ def decompose_filenames(df):
     # Combine with original dataframe
     return pd.concat([df, parsed_df], axis=1)
 
+
+def reassemble_issue_segments(jsonl_path):
+    """ 
+    This function takes the path to a json file returned from the mistral server and reconstructs it into 
+    a meaningful dataframe. It does this by converting the json itself into a dataframe,
+    then extracting the bounding box and segment information for each element of the json
+    then merging all the segments into a single peice of text.
+    """
+
+    with open(jsonl_path, 'r') as file:
+        json_data = json.load(file)  # Use load instead of loads
+
+    # Create the DataFrame
+    df = convert_returned_json_to_dataframe(json_data)
+    df = decompose_filenames(df)
+    df = combine_article_segments(df)
+
+    return df
 
 
 def delete_all_batch_files(client, api_key, limit=100):

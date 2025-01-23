@@ -641,8 +641,8 @@ def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5, remove_abandon
                                 'text',  # Value if condition is True
                                 bbox_df['class'])  # Value if condition is False
     """
-    # This re-labels everything that is not text, table, or figure as title.
-    bbox_df['class'] = np.where((~bbox_df['class'].isin(['figure', 'table', 'text'])), 
+    # This re-labels everything that is not abandon, text, table, or figure as title.
+    bbox_df['class'] = np.where((~bbox_df['class'].isin(['figure', 'table', 'text', 'abandon'])), 
                                 'title',  # Value if condition is True
                                 bbox_df['class'])  # Value if condition is False
 
@@ -670,10 +670,64 @@ def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5, remove_abandon
     
     #add in bbox ID
     bbox_df['box_page_id'] = "B" + bbox_df['page_block'].astype(str) + "C"+bbox_df['column_number'].astype(str)  + "R" + bbox_df['reading_order'].astype(str) 
-    bbox_df['ratio'] = bbox_df['height']/bbox_df['width']  
+    bbox_df['ratio'] = bbox_df['height']/bbox_df['width']  #box ratio
 
     return bbox_df
 
+
+def remove_duplicate_boxes(df):
+    """
+    Remove duplicate bounding boxes from the DataFrame.
+    Duplicates are defined as boxes with the same class, coordinates, and image.
+    This function is primarliy used for creating a dataset to be used for fine-tuning.
+    It is likely (but not certain) the majority of the overlapping boxes are of class "abandon", 
+    or title, as these two classes are created duriing.
+    post-processing and are the classes presenting the most issues
+    """
+    # Calculate normalized coordinates
+    df = df.copy()
+    
+    # Calculate image dimensions
+    img_width = df['page_width'] + df['x1']
+    img_height = df['page_height'] + df['y1']
+    
+    # Add normalized coordinates columns
+    df['x_center_norm'] = ((df['x1'] + df['x2']) / 2) / img_width
+    df['y_center_norm'] = ((df['y1'] + df['y2']) / 2) / img_height
+    df['width_norm'] = (df['x2'] - df['x1']) / img_width
+    df['height_norm'] = (df['y2'] - df['y1']) / img_height
+    
+    # Round normalized coordinates to 6 decimal places to avoid floating point issues
+    for col in ['x_center_norm', 'y_center_norm', 'width_norm', 'height_norm']:
+        df[col] = df[col].round(6)
+    
+    # Count initial rows
+    initial_count = len(df)
+    
+    # Drop duplicates based on normalized coordinates, class, and image
+    df = df.drop_duplicates(
+        subset=['filename', 'class', 
+                'x_center_norm', 'y_center_norm', 
+                'width_norm', 'height_norm']
+    )
+    
+    # Remove the temporary normalized coordinate columns
+    df = df.drop(columns=['x_center_norm', 'y_center_norm', 
+                         'width_norm', 'height_norm'])
+    
+    # Count removed duplicates
+    removed_count = initial_count - len(df)
+    
+    print(f"Removed {removed_count} duplicate bounding boxes")
+    print(f"Original count: {initial_count}")
+    print(f"New count: {len(df)}")
+    
+    # Group by filename and count affected images
+    affected_images = df.groupby('filename').size()
+    affected_count = len(affected_images[affected_images > 0])
+    print(f"Number of affected images: {affected_count}")
+    
+    return df
 
 def plot_boxes_on_image(df, image_path, figsize=(15,15), show_reading_order=False):
     """

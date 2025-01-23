@@ -1,8 +1,8 @@
 ###############
 #
 # This script is used to break the NCSE test set up into single bounding box files
-# This allows the OCR to be tested easily for all the OCR methods
-#
+# This allows the OCR to be tested easily for all the OCR methods.
+# This is only needed to replicate the comparison between methods.
 #
 ##################
 

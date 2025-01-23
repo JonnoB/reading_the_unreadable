@@ -11,6 +11,7 @@ table
 """
 
 import pandas as pd
+import numpy as np
 import os
 from mistralai import Mistral
 from send_to_lm_functions import process_issues_to_jobs
@@ -35,7 +36,7 @@ client = Mistral(api_key=api_key)
 
 # Prompt dictionary
 prompt_dict = {
-    'text': "You are an expert at transcription. The text is from a 19th century English newspaper. Please transcribe exactly, including linebreaks, the text found in the image. Do not add any commentary. Do not use mark up please transcribe using plain text only.",
+    'text': "You are an expert at transcription. The text is from a 19th century English newspaper. Please transcribe exactly, including linebreaks, the text found in the image. Do not add any commentary. Do not use markdown please transcribe using plain text only.",
     'figure': 'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
     'table': 'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'
 }
@@ -43,10 +44,18 @@ prompt_dict = {
 # Process each file
 for parquet_file, image_path in path_mapping.items():
     # Construct full path to parquet file
-    parquet_path = os.path.join('data/periodical_bboxes/post_process', parquet_file)
+    parquet_path = os.path.join('data/periodical_bboxes/post_process/ncse', parquet_file)
     
     # Load bbox dataframe
     bbox_df = pd.read_parquet(parquet_path)
+
+    if True: # This is to allow testing on small datasets
+        random_pages = bbox_df['issue'].unique()
+        np.random.seed(4321) 
+        random_pages = np.random.choice(random_pages, size=1, replace=False)
+
+        # Filter the DataFrame to only include these pages
+        bbox_df = bbox_df[bbox_df['issue'].isin(random_pages)]
     
     # Create output filename based on the base folder name
     base_name = os.path.basename(image_path)

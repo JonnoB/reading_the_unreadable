@@ -33,7 +33,7 @@ else:
 os.makedirs(output_folder, exist_ok=True)
 
 all_files = os.listdir(input_folder)
-#all_files = ['Publishers_Circular_issue_PDF_files_1040.parquet']
+all_files = ['Monthly_Repository_issue_PDF_files_1056.parquet', 'Tomahawk_issue_PDF_files_1056.parquet']
 
 for file in all_files:
     output_file_path = os.path.join(output_folder, file)
@@ -48,6 +48,9 @@ for file in all_files:
     
     bbox_df['page_id'] = bbox_df['filename'].str.replace('.png', "")
 
+    #Renames due to DOCLayout-Yolo naming conventions, having a single word class is more convenient for when I create
+    #a custom ID to send to LM... yes I could use a code, but this is the choice I have made.
+    bbox_df['class'] = np.where(bbox_df['class']=='plain text', 'text', bbox_df['class']) 
     if fine_tune_mode:
 
         bbox_df['issue'] = bbox_df['filename'].str.split('_page_').str[0]
@@ -63,9 +66,6 @@ for file in all_files:
         bbox_df = remove_duplicate_boxes(bbox_df)
     
     else:
-        #Renames due to DOCLayout-Yolo naming conventions, having a single word class is more convenient for when I create
-        #a custom ID to send to LM... yes I could use a code, but this is the choice I have made.
-        bbox_df['class'] = np.where(bbox_df['class']=='plain text', 'text', bbox_df['class']) 
         bbox_df = postprocess_bbox(bbox_df, 10, width_multiplier= width_multiplier, remove_abandon=remove_abandon)
     
     bbox_df.to_parquet(output_file_path)

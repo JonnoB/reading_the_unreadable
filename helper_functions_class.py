@@ -1,5 +1,6 @@
 import json
-
+from tenacity import retry, wait_fixed, stop_after_attempt, retry_if_exception_type
+import time
 
 def truncate_to_n_tokens(text, tokenizer, max_tokens =100):
 
@@ -85,6 +86,7 @@ def create_iptc_prompt(article_text):
             14: 'sport',
             15: 'conflict, war and peace',
             16: 'weather'
+            17: 'N/A'
         }}
     You will respond using a JSON format.
 
@@ -96,27 +98,80 @@ def create_iptc_prompt(article_text):
     """
     return iptc_prompt
 
+@retry(
+    wait=wait_fixed(0.2),  # Wait 0.2 seconds between attempts (5 requests per second)
+    stop=stop_after_attempt(3),  # Maximum 3 attempts
+    retry=retry_if_exception_type(Exception)
+)
 def classify_text_with_api(prompt, client, model="mistral-large-latest"):
     try:
+        # Get API response
         chat_response = client.chat.complete(
             model=model,
-                messages = [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
         )
 
-        content = chat_response.choices[0].message.content
+        content = chat_response.choices[0].message.content.strip()
+        
+        # Remove any markdown formatting
+        content = content.lstrip('```json').rstrip('```').strip()
+        
+        def clean_response(text):
+            # Replace single quotes with double quotes for JSON compatibility
+            text = text.replace("'", '"')
+            # Remove any whitespace or newlines
+            text = ''.join(text.split())
+            return text
+        
+        # Clean the response
+        cleaned_content = clean_response(content)
+        
+        # Try multiple parsing methods
+        try:
+            # Method 1: Direct JSON parsing
+            result_dict = json.loads(cleaned_content)
+        except json.JSONDecodeError:
+            try:
+                # Method 2: Python literal eval
+                import ast
+                result_dict = ast.literal_eval(content)
+            except:
+                try:
+                    # Method 3: Manual parsing for simple cases
+                    if 'class' in content and ':' in content:
+                        # Extract the class value
+                        class_str = content.split(':')[1].strip().rstrip('}')
+                        if class_str.startswith('[') and class_str.endswith(']'):
+                            # Handle list of classes
+                            class_values = [int(x.strip()) for x in class_str[1:-1].split(',') if x.strip()]
+                            result_dict = {'class': class_values}
+                        else:
+                            # Handle single class
+                            class_value = int(class_str)
+                            result_dict = {'class': class_value}
+                    else:
+                        print(f"Unable to parse response format: {content}")
+                        return {'class': 99}
+                except:
+                    print(f"Failed to parse response: {content}")
+                    return {'class': 99}
 
-        json_content = content.strip().lstrip('```json').rstrip('```').strip()
-
-        # Parse the JSON string into a Python dictionary
-        result_dict = json.loads(json_content)
+        # Validate the result
+        if not isinstance(result_dict, dict) or 'class' not in result_dict:
+            print(f"Invalid result format: {result_dict}")
+            return {'class': 99}
 
         return result_dict
 
     except Exception as e:
         print(f"An error occurred: {str(e)}")
+        try:
+            print(f"Response content: {content}")
+        except:
+            print("Could not print response content")
         return {'class': 99}

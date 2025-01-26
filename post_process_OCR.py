@@ -10,7 +10,7 @@ def _():
     from pathlib import Path
     from bbox_functions import plot_boxes_on_image
     import os 
-
+    from tqdm import tqdm
 
     data = os.path.join('data', "download_jobs/EWJ.parquet")
 
@@ -33,7 +33,7 @@ def _():
         'NS': '/media/jonno/ncse/converted/all_files_png_200/Northern_Star_issue_PDF_files'
     }
 
-    raw_bbox_path = "data/periodical_bboxes/post_process_raw"
+    raw_bbox_path = "data/periodical_bboxes/raw"
     bbox_path = "data/periodical_bboxes/post_process"
 
     raw_bboxes_df = [pd.read_parquet(os.path.join(raw_bbox_path, _file_path)) for _file_path in os.listdir(raw_bbox_path)] 
@@ -55,6 +55,7 @@ def _():
         plot_boxes_on_image,
         raw_bbox_path,
         raw_bboxes_df,
+        tqdm,
     )
 
 
@@ -67,18 +68,19 @@ def _(all_data_files, data_path, os, pd):
         test2.append(pd.read_parquet(os.path.join(data_path, _file)))
 
     test2 = pd.concat(test2, ignore_index=True)
+    test2['filename'] = test2['page_id']+'.png'
     return (test2,)
 
 
 @app.cell
 def _(test2):
-    test2.groupby('class').size()
+    test2
     return
 
 
 @app.cell
 def _(test2):
-    test2['page_id'].unique()
+    test2
     return
 
 
@@ -89,37 +91,117 @@ def _(
     path_mapping,
     periodical_mapping,
     plot_boxes_on_image,
+    raw_bboxes_df,
     test2,
 ):
-    target_page =test2['page_id'].unique()[17]
+    import numpy as np 
+    import matplotlib.pyplot as plt
 
-    periodical_code = periodical_mapping.loc[periodical_mapping['periodical']==target_page.split("-")[0], 'periodical_code'].iloc[0]
-    #  Identify image folder using the periodical ID
-    image_path = path_mapping[periodical_code]
+    def trim_white_space(image):
+        # Assuming white is [255, 255, 255]
+        mask = (image != 255).any(axis=2)
+        rows = np.any(mask, axis=1)
+        cols = np.any(mask, axis=0)
+        ymin, ymax = np.where(rows)[0][[0, -1]]
+        xmin, xmax = np.where(cols)[0][[0, -1]]
+        return image[ymin:ymax, xmin:xmax]
 
-    plot_boxes_on_image(bboxes_df[bboxes_df['page_id']==target_page], 
-                        image_path = os.path.join(image_path, target_page+'.png'), show_reading_order=True)
-    return image_path, periodical_code, target_page
+    def pad_to_match_height(image1, image2):
+        max_height = max(image1.shape[0], image2.shape[0])
+        
+        # Pad image1 if necessary
+        if image1.shape[0] < max_height:
+            pad_height = max_height - image1.shape[0]
+            padding = np.full((pad_height, image1.shape[1], image1.shape[2]), 255, dtype=np.uint8)
+            image1 = np.vstack((image1, padding))
+        
+        # Pad image2 if necessary
+        if image2.shape[0] < max_height:
+            pad_height = max_height - image2.shape[0]
+            padding = np.full((pad_height, image2.shape[1], image2.shape[2]), 255, dtype=np.uint8)
+            image2 = np.vstack((image2, padding))
+        
+        return image1, image2
+
+    combined_image_folder = 'data/combined_images'
+
+    os.makedirs(combined_image_folder,exist_ok=True)
+
+    for _filename in test2['filename'].unique():
+
+            _periodical_code = periodical_mapping.loc[periodical_mapping['periodical']==_filename.split("-")[0], 
+        'periodical_code'].iloc[0]
+            #  Identify image folder using the periodical ID
+            _image_path = path_mapping[_periodical_code]
+
+            # Create first plot and convert to image
+            fig1 = plot_boxes_on_image(bboxes_df[bboxes_df['filename']==_filename], 
+                                      image_path = os.path.join(_image_path, _filename), 
+                                      show_reading_order=True)
+            # Convert figure to numpy array
+            fig1.canvas.draw()
+            image1 = np.array(fig1.canvas.renderer._renderer)
+
+            # rename classes so the images are easier to compare
+            _temp = raw_bboxes_df[raw_bboxes_df['filename']==_filename].copy()
+            _temp['class'] = np.where(_temp['class']=='plain text', 'text', _temp['class'])
+            _temp['class'] = np.where(_temp['class'].isin(['text', 'figure', 'table']), _temp['class'], 'other')
+            fig2 = plot_boxes_on_image(_temp, 
+                                      image_path = os.path.join(_image_path, _filename), 
+                                      show_reading_order=True)
+            fig2.canvas.draw()
+            image2 = np.array(fig2.canvas.renderer._renderer)
+
+            # Combine images
+            _image1_trimmed = trim_white_space(image1)
+            _image2_trimmed = trim_white_space(image2)
+            _image1_padded, _image2_padded = pad_to_match_height(_image1_trimmed, _image2_trimmed)
+            combined_image = np.hstack((_image1_padded, _image2_padded))
+
+            # Display combined image
+            plt.figure(figsize=(30,15))
+            plt.imshow(combined_image)
+            plt.axis('off')
+            plt.imsave(os.path.join(combined_image_folder, _filename), combined_image)
+
+            # Clean up by closing figures to free memory
+            plt.close('all')
+    return (
+        combined_image,
+        combined_image_folder,
+        fig1,
+        fig2,
+        image1,
+        image2,
+        np,
+        pad_to_match_height,
+        plt,
+        trim_white_space,
+    )
 
 
 @app.cell
-def _(image_path, os, plot_boxes_on_image, raw_bboxes_df, target_page):
+def _(bboxes_df, os, periodical_mapping, plot_boxes_on_image, plt):
+    _save_folder = 'data/image_with_bounding/test_set_post_process'
 
-    plot_boxes_on_image(raw_bboxes_df[raw_bboxes_df['page_id']==target_page], 
-                        image_path = os.path.join(image_path, target_page+'.png'), show_reading_order=True)
+    os.makedirs(_save_folder, exist_ok=True)
 
-    return
+    for _target_page in os.listdir('data/converted/ncse_bbox_test_set_hyphen'):
+        _periodical_code = periodical_mapping.loc[periodical_mapping['periodical']==_target_page.split("-")[0], 'periodical_code'].iloc[0]
+        #  Identify image folder using the periodical ID
+        _image_path = 'data/converted/ncse_bbox_test_set_hyphen'
 
+        _image = plot_boxes_on_image(bboxes_df[bboxes_df['filename']==_target_page], 
+                            image_path = os.path.join(_image_path, _target_page), show_reading_order=True)
 
-@app.cell
-def _(raw_bboxes_df, target_page):
-    raw_bboxes_df[raw_bboxes_df['page_id']==target_page]
+        _image.savefig(os.path.join(_save_folder, _target_page))
+        plt.close()
     return
 
 
 @app.cell
 def _(raw_bboxes_df, test2):
-    raw_bboxes_df[raw_bboxes_df['page_id'].isin(test2['page_id'].unique())].groupby('class').size()
+    raw_bboxes_df[raw_bboxes_df['filename'].isin(test2['filename'].unique())].groupby('class').size()
     return
 
 
@@ -127,6 +209,210 @@ def _(raw_bboxes_df, test2):
 def _(bboxes_df, test2):
     bboxes_df[bboxes_df['page_id'].isin(test2['page_id'].unique())].groupby('class').size()
     return
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        # Split boxes where a line is entirely in caps
+
+        It seems pretty common for a line that is entirely in caps to be a title. This means I can make a heuristic whereby a box of class 'text' is split if the line is all caps, the all caps lines are classed as "title" and all consecutive title rows are merged together
+
+
+
+        This is great it, and the tests were a very good idea. I think we need to do one more addition. There is a column called "reading_order" this provides the reading order of the bounding boxes on the page, however as we have modified the reading order we need to create "reading_order_new" on the previous reading order and the "sub_order"
+        """
+    )
+    return
+
+
+@app.cell
+def _(bboxes_df, test2):
+    bboxes_df[bboxes_df['filename'].isin(test2['filename'].unique())]
+    return
+
+
+@app.cell
+def _(pd):
+    def is_title(text):
+        # Function to check if a string meets title criteria
+        vowels = set('AEIOU')
+        
+        # Check if the text is all uppercase
+        if not text.upper() == text:
+            return False
+            
+        # Split by any character that's not a letter or space
+        import re
+        word_groups = re.split(r'[^A-Z\s]', text)
+        
+        # For each continuous group of words
+        for group in word_groups:
+            # Remove spaces and check if this group meets criteria
+            letters_only = group.replace(' ', '')
+            if len(letters_only) >= 5:  # Check length
+                vowel_count = sum(1 for c in letters_only if c in vowels)
+                if vowel_count >= 2:  # Check vowels
+                    return True
+        return False
+
+    def split_and_reclassify(bbox_df):
+
+
+        new_rows = []
+        
+        for idx, row in bbox_df.iterrows():
+            text = row['content']
+            paragraphs = text.split('\n\n')
+            
+            if len(paragraphs) == 1:
+                row['class2'] = row['class']
+                row['sub_order'] = 1
+                new_rows.append(row)
+            else:
+                for i, para in enumerate(paragraphs, 1):
+                    if para.strip():  # Skip empty paragraphs
+                        new_row = row.copy()
+                        new_row['content'] = para.strip()
+                        new_row['sub_order'] = i
+                        
+                        # Check each paragraph against the new title criteria
+                        if is_title(para.strip()):
+                            new_row['class2'] = 'title'
+                        else:
+                            new_row['class2'] = row['class']
+                        
+                        new_rows.append(new_row)
+        
+        # Create new dataframe from the processed rows
+        new_df = pd.DataFrame(new_rows).reset_index(drop=True)
+        
+        return new_df
+
+
+    def merge_consecutive_titles(df):
+        # Create a copy to avoid modifying the original dataframe
+        result_df = df.copy()
+        
+        # Initialize list to store indices to drop
+        indices_to_drop = []
+        
+        # Initialize variables to track current merge group
+        current_content = []
+        current_start_idx = None
+        
+        # Iterate through rows
+        for i in range(len(result_df)):
+            current_row = result_df.iloc[i]
+            
+            # If we're not at the last row, get next row for comparison
+            if i < len(result_df) - 1:
+                next_row = result_df.iloc[i + 1]
+                
+                # Check if current and next rows should be merged
+                should_merge = (
+                    current_row['class2'] == 'title' and
+                    next_row['class2'] == 'title' and
+                    current_row['page_id'] == next_row['page_id'] and
+                    current_row['box_page_id'] == next_row['box_page_id'] and
+                    current_row['sub_order'] + 1 == next_row['sub_order']
+                )
+                
+                if should_merge:
+                    # Start new merge group if not already started
+                    if current_start_idx is None:
+                        current_start_idx = i
+                        current_content = [current_row['content']]
+                    
+                    current_content.append(next_row['content'])
+                    indices_to_drop.append(i + 1)
+                    
+                elif current_start_idx is not None:
+                    # Merge the accumulated content into the first row
+                    merged_content = '\n'.join(current_content)
+                    result_df.at[current_start_idx, 'content'] = merged_content
+                    
+                    # Reset tracking variables
+                    current_content = []
+                    current_start_idx = None
+                    
+            elif current_start_idx is not None:
+                # Handle the last merge group if exists
+                merged_content = '\n'.join(current_content)
+                result_df.at[current_start_idx, 'content'] = merged_content
+        
+        # Drop the merged rows using boolean indexing instead of index labels
+        if indices_to_drop:
+            result_df = result_df[~result_df.index.isin(indices_to_drop)]
+        
+        # Reset index
+        result_df = result_df.reset_index(drop=True)
+        
+        # Recalculate sub_order within each box_page_id group
+        result_df['sub_order'] = result_df.groupby(['page_id', 'box_page_id']).cumcount() + 1
+        
+        return result_df
+
+    # Usage:
+    # First run the split_and_reclassify function
+    # df_split = split_and_reclassify(bbox_df)
+    # Then merge the consecutive titles and recalculate sub_order
+    # df_final = merge_consecutive_titles(df_split)
+
+    # Test cases
+    test_texts = [
+        "THE STAR",              # Should be title
+        "SIR",                   # Should not be title (too short)
+        "---",                   # Should not be title
+        "...",                   # Should not be title
+        "N.I.A.B.P",            # Should not be title (broken by periods)
+        "BREAKING NEWS",         # Should be title
+        "HELLO WORLD",          # Should be title
+        "THE END.",             # Should be title (ignoring period)
+        "A.B HELLO WORLD C.D",  # Should be title (HELLO WORLD meets criteria)
+        "NO VOWELS NTH"         # Should not be title (not enough vowels)
+    ]
+
+    # Test the function
+    for text in test_texts:
+        print(f"{text}: {'Is title' if is_title(text) else 'Not title'}")
+    return (
+        is_title,
+        merge_consecutive_titles,
+        split_and_reclassify,
+        test_texts,
+        text,
+    )
+
+
+@app.cell
+def _(merge_consecutive_titles, pd, split_and_reclassify):
+    test_set_df = pd.read_csv('data/download_jobs/experiments/dataframe/NCSE_deskew_True_max_ratio_1.csv')
+    test_set_df['class'] = 'text'
+
+    temp = split_and_reclassify(test_set_df)
+
+    temp2 = merge_consecutive_titles(temp)
+    return temp, temp2, test_set_df
+
+
+@app.cell
+def _(temp):
+    temp[['class', 'class2', 'sub_order', 'content']]
+    return
+
+
+@app.cell
+def _(temp2):
+    temp2[['class', 'class2', 'sub_order', 'content']]
+    return
+
+
+@app.cell
+def _():
+    import marimo as mo
+    return (mo,)
 
 
 if __name__ == "__main__":

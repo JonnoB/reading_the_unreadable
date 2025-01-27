@@ -24,14 +24,14 @@ def _(mo):
 def _():
     import os
     import pandas as pd
-    from send_to_lm_functions import process_image_with_api, crop_and_encode_boxes, decompose_filenames, combine_article_segments, convert_returned_streaming_to_dataframe, delete_all_batch_files
-    from bbox_functions import plot_boxes_on_image
+    from function_modules.send_to_lm_functions import process_image_with_api, crop_and_encode_boxes, decompose_filenames, combine_article_segments, convert_returned_streaming_to_dataframe, delete_all_batch_files
+    from function_modules.bbox_functions import plot_boxes_on_image
     from tqdm import tqdm
     import numpy as np
 
-    from bbox_functions import assign_columns, basic_box_data, create_reading_order
-
-    total_root = "/media/jonno/ncse/converted/all_files_png_120"
+    from function_modules.bbox_functions import assign_columns, basic_box_data, create_reading_order
+    image_folder = os.environ['image_folder']
+    total_root = os.path.join(image_folder, "converted/all_files_png_120")
     # image folder path
     EWJ = os.path.join(total_root, 'English_Womans_Journal_issue_PDF_files')
     CLD = os.path.join(total_root, 'Leader_issue_PDF_files')
@@ -335,7 +335,7 @@ def _(df2):
 def _(process_image_with_api):
 
 
-    from send_to_lm_functions import deskew_image, encode_pil_image
+    from function_modules.send_to_lm_functions import deskew_image, encode_pil_image
     from PIL import Image
 
 

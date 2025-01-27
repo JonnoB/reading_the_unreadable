@@ -8,12 +8,15 @@
 
 
 import pandas as pd
-import numpy as np
 import os
-from send_to_lm_functions import crop_image_to_bbox
+from function_modules.send_to_lm_functions import crop_image_to_bbox
 import cv2
 from tqdm import tqdm
 
+from pathlib import Path
+
+# Change working directory to project root
+os.chdir(Path(__file__).parent.parent)
 
 ncse_testset_bbox_df = pd.read_csv('data/ncse_testset_bboxes.csv')
 

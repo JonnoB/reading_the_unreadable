@@ -8,9 +8,11 @@ app = marimo.App(width="medium")
 def _():
     import pandas as pd
     from pathlib import Path
-    from bbox_functions import plot_boxes_on_image
+    from function_modules.bbox_functions import plot_boxes_on_image
     import os 
     from tqdm import tqdm
+
+    image_path = os.environ['image_path']
 
     data = os.path.join('data', "download_jobs/EWJ.parquet")
 
@@ -25,12 +27,12 @@ def _():
     )
 
     path_mapping = {
-        'CLD': '/media/jonno/ncse/converted/all_files_png_120/Leader_issue_PDF_files',
-        'EWJ': '/media/jonno/ncse/converted/all_files_png_120/English_Womans_Journal_issue_PDF_files',
-        'MRP': '/media/jonno/ncse/converted/all_files_png_120/Monthly_Repository_issue_PDF_files',
-        'TTW': '/media/jonno/ncse/converted/all_files_png_120/Tomahawk_issue_PDF_files',
-        'TEC': '/media/jonno/ncse/converted/all_files_png_120/Publishers_Circular_issue_PDF_files',
-        'NS': '/media/jonno/ncse/converted/all_files_png_200/Northern_Star_issue_PDF_files'
+        'CLD': os.path.join(image_path, 'converted/all_files_png_120/Leader_issue_PDF_files'),
+        'EWJ': os.path.join(image_path, 'converted/all_files_png_120/English_Womans_Journal_issue_PDF_files'),
+        'MRP': os.path.join(image_path, 'all_files_png_120/Monthly_Repository_issue_PDF_files'),
+        'TTW': os.path.join(image_path, 'converted/all_files_png_120/Tomahawk_issue_PDF_files'),
+        'TEC': os.path.join(image_path, 'converted/all_files_png_120/Publishers_Circular_issue_PDF_files'),
+        'NS': os.path.join(image_path, 'converted/all_files_png_200/Northern_Star_issue_PDF_files')
     }
 
     raw_bbox_path = "data/periodical_bboxes/raw"
@@ -48,6 +50,7 @@ def _():
         bboxes_df,
         data,
         data_path,
+        image_path,
         os,
         path_mapping,
         pd,
@@ -108,19 +111,19 @@ def _(
 
     def pad_to_match_height(image1, image2):
         max_height = max(image1.shape[0], image2.shape[0])
-        
+
         # Pad image1 if necessary
         if image1.shape[0] < max_height:
             pad_height = max_height - image1.shape[0]
             padding = np.full((pad_height, image1.shape[1], image1.shape[2]), 255, dtype=np.uint8)
             image1 = np.vstack((image1, padding))
-        
+
         # Pad image2 if necessary
         if image2.shape[0] < max_height:
             pad_height = max_height - image2.shape[0]
             padding = np.full((pad_height, image2.shape[1], image2.shape[2]), 255, dtype=np.uint8)
             image2 = np.vstack((image2, padding))
-        
+
         return image1, image2
 
     combined_image_folder = 'data/combined_images'
@@ -218,10 +221,6 @@ def _(mo):
         # Split boxes where a line is entirely in caps
 
         It seems pretty common for a line that is entirely in caps to be a title. This means I can make a heuristic whereby a box of class 'text' is split if the line is all caps, the all caps lines are classed as "title" and all consecutive title rows are merged together
-
-
-
-        This is great it, and the tests were a very good idea. I think we need to do one more addition. There is a column called "reading_order" this provides the reading order of the bounding boxes on the page, however as we have modified the reading order we need to create "reading_order_new" on the previous reading order and the "sub_order"
         """
     )
     return
@@ -238,15 +237,15 @@ def _(pd):
     def is_title(text):
         # Function to check if a string meets title criteria
         vowels = set('AEIOU')
-        
+
         # Check if the text is all uppercase
         if not text.upper() == text:
             return False
-            
+
         # Split by any character that's not a letter or space
         import re
         word_groups = re.split(r'[^A-Z\s]', text)
-        
+
         # For each continuous group of words
         for group in word_groups:
             # Remove spaces and check if this group meets criteria
@@ -261,11 +260,11 @@ def _(pd):
 
 
         new_rows = []
-        
+
         for idx, row in bbox_df.iterrows():
             text = row['content']
             paragraphs = text.split('\n\n')
-            
+
             if len(paragraphs) == 1:
                 row['class2'] = row['class']
                 row['sub_order'] = 1
@@ -276,40 +275,40 @@ def _(pd):
                         new_row = row.copy()
                         new_row['content'] = para.strip()
                         new_row['sub_order'] = i
-                        
+
                         # Check each paragraph against the new title criteria
                         if is_title(para.strip()):
                             new_row['class2'] = 'title'
                         else:
                             new_row['class2'] = row['class']
-                        
+
                         new_rows.append(new_row)
-        
+
         # Create new dataframe from the processed rows
         new_df = pd.DataFrame(new_rows).reset_index(drop=True)
-        
+
         return new_df
 
 
     def merge_consecutive_titles(df):
         # Create a copy to avoid modifying the original dataframe
         result_df = df.copy()
-        
+
         # Initialize list to store indices to drop
         indices_to_drop = []
-        
+
         # Initialize variables to track current merge group
         current_content = []
         current_start_idx = None
-        
+
         # Iterate through rows
         for i in range(len(result_df)):
             current_row = result_df.iloc[i]
-            
+
             # If we're not at the last row, get next row for comparison
             if i < len(result_df) - 1:
                 next_row = result_df.iloc[i + 1]
-                
+
                 # Check if current and next rows should be merged
                 should_merge = (
                     current_row['class2'] == 'title' and
@@ -318,40 +317,40 @@ def _(pd):
                     current_row['box_page_id'] == next_row['box_page_id'] and
                     current_row['sub_order'] + 1 == next_row['sub_order']
                 )
-                
+
                 if should_merge:
                     # Start new merge group if not already started
                     if current_start_idx is None:
                         current_start_idx = i
                         current_content = [current_row['content']]
-                    
+
                     current_content.append(next_row['content'])
                     indices_to_drop.append(i + 1)
-                    
+
                 elif current_start_idx is not None:
                     # Merge the accumulated content into the first row
                     merged_content = '\n'.join(current_content)
                     result_df.at[current_start_idx, 'content'] = merged_content
-                    
+
                     # Reset tracking variables
                     current_content = []
                     current_start_idx = None
-                    
+
             elif current_start_idx is not None:
                 # Handle the last merge group if exists
                 merged_content = '\n'.join(current_content)
                 result_df.at[current_start_idx, 'content'] = merged_content
-        
+
         # Drop the merged rows using boolean indexing instead of index labels
         if indices_to_drop:
             result_df = result_df[~result_df.index.isin(indices_to_drop)]
-        
+
         # Reset index
         result_df = result_df.reset_index(drop=True)
-        
+
         # Recalculate sub_order within each box_page_id group
         result_df['sub_order'] = result_df.groupby(['page_id', 'box_page_id']).cumcount() + 1
-        
+
         return result_df
 
     # Usage:

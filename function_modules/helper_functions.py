@@ -17,7 +17,6 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 import wand.image
 from PIL import Image
 from io import BytesIO
-import logging
 from tqdm import tqdm
 import re
 from markdown_it import MarkdownIt
@@ -1018,10 +1017,10 @@ def compute_metric(row, metric, prediction_col, reference_col):
         predictions = [prediction]
         references = [reference]
         return metric.compute(predictions=predictions, references=references)
-    except KeyError as e:
+    except KeyError:
        #print(f"KeyError: {e} in row: {row}")
         return None
-    except Exception as e:
+    except Exception:
         #print(f"Error: {e} in row: {row}")
         return None
 

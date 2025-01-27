@@ -8,7 +8,6 @@ These functions are generally to do with the analysis and evaluation code
 
 import os
 import pandas as pd
-import numpy as np
 
 
 

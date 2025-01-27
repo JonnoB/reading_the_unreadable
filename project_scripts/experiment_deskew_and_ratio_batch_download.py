@@ -1,14 +1,18 @@
-import pandas as pd
 import os
 from mistralai import Mistral
-from send_to_lm_functions import download_processed_jobs, convert_returned_json_to_dataframe, combine_article_segments, decompose_filenames
+from function_modules.send_to_lm_functions import download_processed_jobs, convert_returned_json_to_dataframe, combine_article_segments, decompose_filenames
 import json
 import glob
+
+from pathlib import Path
+
+# Change working directory to project root
+os.chdir(Path(__file__).parent.parent)
 
 api_key = os.environ["MISTRAL_API_KEY"]
 client = Mistral(api_key=api_key)
 
-experiment_dir = f'data/download_jobs/experiments'
+experiment_dir = 'data/download_jobs/experiments'
 json_dir = os.path.join(experiment_dir, 'json')
 os.makedirs(json_dir, exist_ok=True)
 

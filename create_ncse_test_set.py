@@ -21,7 +21,7 @@ def __(mo):
 @app.cell
 def __():
     import os 
-    from helper_functions import files_to_df_func
+    from function_modules.helper_functions import files_to_df_func
     import pandas as pd
     from tqdm import tqdm
     import shutil

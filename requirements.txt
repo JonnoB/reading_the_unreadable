@@ -19,8 +19,6 @@ markdown-it-py[plugins]
 mdit-plain
 cleanlab
 lightning_sdk
-transformers #used for counting the tokens that will be used by the llm, this is to ensure we do not exceed the training budget
-
+transformers 
+marimo
 nervaluate #for evaluating the NER
-
-#beautifulsoup4 #only needed for dowbnloading the dataset 1 from overproof, which is not really necessary.

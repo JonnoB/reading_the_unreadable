@@ -1,8 +1,11 @@
 import pandas as pd
-from send_to_lm_functions import process_issues_to_jobs
+from function_modules.send_to_lm_functions import process_issues_to_jobs
 import os
 from mistralai import Mistral
+from pathlib import Path
 
+# Change working directory to project root
+os.chdir(Path(__file__).parent.parent)
 # API setup
 api_key = os.environ["MISTRAL_API_KEY"]
 client = Mistral(api_key=api_key)

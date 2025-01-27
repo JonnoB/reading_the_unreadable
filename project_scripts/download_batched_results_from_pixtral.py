@@ -9,7 +9,12 @@ the jobs reassembeled into a dataframe where one row is one bounding box.
 import pandas as pd
 import os
 from mistralai import Mistral
-from send_to_lm_functions import download_processed_jobs, reassemble_issue_segments
+from function_modules.send_to_lm_functions import download_processed_jobs, reassemble_issue_segments
+
+from pathlib import Path
+
+# Change working directory to project root
+os.chdir(Path(__file__).parent.parent)
 
 api_key = os.environ["MISTRAL_API_KEY"]
 client = Mistral(api_key=api_key)

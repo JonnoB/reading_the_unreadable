@@ -5,6 +5,17 @@ This project is an evolution of [CLOCR-C](https://github.com/JonnoB/clocrc), [Sc
 
 ## This project is currently underdevelopment... probably best not to use
 
+# Using this Code Repository
+
+In order to use the code in this repo, please first install the requirements.txt and the local package "function_modules". 
+It is reccmomended to use the Astral UV library for package management. Install using the below commands
+
+`uv pip install -r requirements.txt`
+`uv pip install -e`
+
+In the case you are not using UV simply drop the 'uv' part of the command and install using pip
+
+If you are using the scripts which work with the original NCSE images ensure the path to the folders is in your `.env` file
 
 # Project Pipeline
 
@@ -46,6 +57,4 @@ The scripts and ipynb to measure the performance of the alternative models can b
 
 
 # Note
-For package management I used the uv library from astral. It is super fast an avoids dependency issues.
-
-- example plotting is in sketching_postprocess_and_plot.py
+- The code is written in a mixture of marimo .py files and .ipynb files. This is becuase although marimo is preferred for it's ease of reporducibility, the GPU acitivity was performed on lightning.ai which is focused on .ipynb based code.

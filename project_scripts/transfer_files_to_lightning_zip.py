@@ -14,9 +14,15 @@ Adjust the details below such as , 'name', 'teamspace', 'user', and 'total_root'
 import os
 from lightning_sdk import Studio
 
+from pathlib import Path
+
+# Change working directory to project root
+os.chdir(Path(__file__).parent.parent)
+image_folder = os.environ['image_folder']
+
 studio = Studio(name="doclayout-yolo", teamspace="Language-model", user="ucabbou")
 total_root = "data/ncse_test_jpg/"
-total_root = "/media/jonno/ncse/converted/all_files_png_120"
+total_root = os.path.join(image_folder,"converted/all_files_png_120")
 
 files = os.listdir(total_root)
 zip_files = [f for f in files if f.endswith('.zip')]

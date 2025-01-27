@@ -114,19 +114,28 @@ def calculate_article_coverage(group):
     text_overlap_pixels = np.sum(text_counts > 1)  # Pixels where text boxes overlap
     text_coverage_pixels = np.sum(text_counts > 0)  # Total pixels covered by text (including overlap)
     text_image_overlap = np.sum((text_counts > 0) & (image_counts > 0))  # Overlap between text and images
+    total_overlap =  np.sum((text_counts + image_counts) > 1)
     total_covered_pixels = np.sum((text_counts + image_counts) > 0)  # Total coverage
-    
-    return pd.Series({
+    print_area = group['print_area'].iloc[0]
+
+    return {
+        'print_height': print_height,
+        'print_width': print_width,
+        'x_min': x_min,
+        'y_min': y_min,
         'text_coverage_pixels': text_coverage_pixels,
         'text_overlap_pixels': text_overlap_pixels,
         'text_image_overlap': text_image_overlap,
         'total_covered_pixels': total_covered_pixels,
-        'maximum_print_area': group['print_area'].iloc[0]
-    })
+        'total_overlap':total_overlap,
+        'maximum_print_area': print_area,
+        "perc_print_area_overlap":total_overlap/print_area,
+        "perc_print_area_coverage":total_covered_pixels/print_area
+    }
 
 def calculate_coverage_and_overlap(df):
     """
-    Process the entire dataframe using a for loop with tqdm
+    Process the entire dataframe using a for loop with tqdm, this aggregates to page level
     """
     # Get unique page_ids
     page_ids = df['page_id'].unique()
@@ -141,23 +150,15 @@ def calculate_coverage_and_overlap(df):
         
         # Calculate coverage
         coverage_data = calculate_article_coverage(page_data)
+        coverage_data['page_id'] = page_id
         
         # Store results
-        results.append({
-            'page_id': page_id,
-            'text_coverage_pixels': coverage_data['text_coverage_pixels'],
-            'text_overlap_pixels': coverage_data['text_overlap_pixels'],
-            'text_image_overlap': coverage_data['text_image_overlap'],
-            'total_covered_pixels': coverage_data['total_covered_pixels']
-        })
+        results.append(coverage_data)
     
-    # Convert results to DataFrame
+    # Convert results to DataFrame at the end
     result_df = pd.DataFrame(results)
-    
-    # Calculate additional metrics if needed
-    result_df['text_coverage_percent'] = (result_df['text_coverage_pixels'] / result_df['maximum_print_area']).round(2)
-    result_df['text_overlap_percent'] = (result_df['text_overlap_pixels'] / result_df['text_coverage_pixels']).round(2)
-    result_df['total_coverage_percent'] = (result_df['total_covered_pixels'] / result_df['maximum_print_area']).round(2)
+
+    result_df[['perc_print_area_overlap', 'perc_print_area_coverage']] = result_df[['perc_print_area_overlap', 'perc_print_area_coverage']].round(2)
     
     return result_df
 
@@ -605,6 +606,7 @@ def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5, remove_abandon
     
     Files require a page_id column which uniquely identifies each page
     """
+    
     bbox_all_df = df.copy()
 
     bbox_all_df['issue'] = bbox_all_df['filename'].str.split('_page_').str[0]

@@ -4,7 +4,6 @@ This module contains a mixture of image manipulation and LLM api functions.
 """
 import os
 import pandas as pd
-import numpy as np
 import datetime 
 import time 
 from tqdm import tqdm
@@ -12,7 +11,6 @@ import cv2
 
 import base64
 import difflib
-import os
 from datetime import datetime
 import litellm
 from tenacity import retry, stop_after_attempt, wait_exponential
@@ -21,8 +19,6 @@ import wand.image
 import json
 from PIL import Image
 from io import BytesIO
-import re
-from numba import jit
 import requests
 
 

@@ -9,16 +9,23 @@
 ##
 ############
 
-from helper_functions import convert_pdf_to_image
+from function_modules.helper_functions import convert_pdf_to_image
 import os
 from tqdm import tqdm
 import pandas as pd
 from datetime import datetime
 import traceback
 
+from pathlib import Path
+
+# Change working directory to project root
+os.chdir(Path(__file__).parent.parent)
+image_folder = os.environ['image_folder']
+os.path.join(image_folder, )
+
 image_dpi = 120
-save_folder = f'/media/jonno/ncse/converted/all_files_png_{image_dpi}'
-source_folder = os.path.join('/media/jonno/ncse')
+save_folder = os.path.join(image_folder, f'converted/all_files_png_{image_dpi}')
+source_folder = image_folder
 
 #save_folder = f'data/converted/all_files_png_{image_dpi}'
 #source_folder = os.path.join('data/all_periodicals')

@@ -10,14 +10,15 @@ def __():
     from cleanlab.object_detection.rank import get_label_quality_scores, compute_badloc_box_scores
     from cleanlab.object_detection.summary import visualize
     from archived.objdet_dataset_helpers import create_image_list
-    from helper_functions import scale_bbox
+    from function_modules.helper_functions import scale_bbox
 
     import os
     import pandas as pd
     import numpy as np
     import json
 
-    image_folder = '/media/jonno/ncse/converted/all_files_png_72/English_Womans_Journal_issue_PDF_files'
+    image_folder_all_images = os.environ['image_folder']
+    image_folder = os.join.path(image_folder_all_images,'converted/all_files_png_72/English_Womans_Journal_issue_PDF_files')
 
     file_name_to_id_map = pd.read_parquet('data/file_name_to_id_map.parquet')
 

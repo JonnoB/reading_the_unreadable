@@ -14,7 +14,7 @@ def _():
     import pandas as pd
     import numpy as np
     import os
-    from analysis_functions import load_txt_files_to_dataframe, reshape_metrics,dataframe_to_latex_with_bold_extreme
+    from function_modules.analysis_functions import load_txt_files_to_dataframe, reshape_metrics,dataframe_to_latex_with_bold_extreme
     from jiwer import cer
     import seaborn as sns
     import matplotlib.pyplot as plt

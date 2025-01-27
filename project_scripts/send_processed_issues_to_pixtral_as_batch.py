@@ -14,16 +14,24 @@ import pandas as pd
 import numpy as np
 import os
 from mistralai import Mistral
-from send_to_lm_functions import process_issues_to_jobs
+from function_modules.send_to_lm_functions import process_issues_to_jobs
+
+from pathlib import Path
+
+
+
+# Change working directory to project root
+os.chdir(Path(__file__).parent.parent)
 
 # Dictionary mapping parquet files to their corresponding image folders
+image_folder = os.environ['image_folder']
 path_mapping = {
-    'Leader_issue_PDF_files_1056.parquet': '/media/jonno/ncse/converted/all_files_png_120/Leader_issue_PDF_files',
-    'English_Womans_Journal_issue_PDF_files_1056.parquet': '/media/jonno/ncse/converted/all_files_png_120/English_Womans_Journal_issue_PDF_files',
-    'Monthly_Repository_issue_PDF_files_1056.parquet': '/media/jonno/ncse/converted/all_files_png_120/Monthly_Repository_issue_PDF_files',
-    'Tomahawk_issue_PDF_files_1056.parquet': '/media/jonno/ncse/converted/all_files_png_120/Tomahawk_issue_PDF_files',
-    'Publishers_Circular_issue_PDF_files_1056.parquet': '/media/jonno/ncse/converted/all_files_png_120/Publishers_Circular_issue_PDF_files',
-    'Northern_Star_issue_PDF_files_2112.parquet': '/media/jonno/ncse/converted/all_files_png_200/Northern_Star_issue_PDF_files'
+    'CLD': os.path.join(image_folder, 'converted/all_files_png_120/Leader_issue_PDF_files'),
+    'EWJ': os.path.join(image_folder, 'converted/all_files_png_120/English_Womans_Journal_issue_PDF_files'),
+    'MRP': os.path.join(image_folder, 'converted/all_files_png_120/Monthly_Repository_issue_PDF_files'),
+    'TTW': os.path.join(image_folder, 'converted/all_files_png_120/Tomahawk_issue_PDF_files'),
+    'TEC': os.path.join(image_folder, 'converted/all_files_png_120/Publishers_Circular_issue_PDF_files'),
+    'NS': os.path.join(image_folder, 'converted/all_files_png_200/Northern_Star_issue_PDF_files')
 }
 
 # path_mapping = {

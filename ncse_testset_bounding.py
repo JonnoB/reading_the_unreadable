@@ -13,7 +13,7 @@ def __(mo):
 @app.cell
 def __():
     from PIL import Image, ImageDraw
-    from helper_functions import create_page_dict, scale_bbox
+    from function_modules.helper_functions import create_page_dict, scale_bbox
     import matplotlib.pyplot as plt
     import pandas as pd
     import numpy as np

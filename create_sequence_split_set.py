@@ -11,7 +11,13 @@ def _():
 
 @app.cell
 def _(mo):
-    mo.md(r"""This script creates the training and test set for the sequence to sequnce splitter""")
+    mo.md(
+        r"""
+        This script creates the training and test set for the sequence to sequnce splitter
+
+        Although the sequence splitter is no longer needed, the ModernBERT classifier is and so this code is kept until the point it can be thrown away
+        """
+    )
     return
 
 
@@ -50,7 +56,7 @@ def _():
         paragraphs = split_into_paragraphs(text)
         if len(paragraphs) < 2:
             return None
-        
+
         # Randomly select an index for the first paragraph
         start_idx = random.randint(0, len(paragraphs) - 2)
         return paragraphs[start_idx], paragraphs[start_idx + 1]
@@ -59,10 +65,10 @@ def _():
         """Create a dataset with both pure and combined samples."""
         # Load all texts
         texts = load_text_files(folder_path)
-        
+
         # Initialize lists for dataset
         all_samples = []
-        
+
         # Create pure samples (adjacent paragraphs from same text)
         pure_samples = []
         while len(pure_samples) < num_samples:
@@ -75,14 +81,14 @@ def _():
                     "text2": para2,
                     "is_same_text": 1
                 })
-        
+
         # Create combined samples (paragraphs from different texts)
         combined_samples = []
         while len(combined_samples) < num_samples:
             text1, text2 = random.sample(texts, 2)
             paras1 = split_into_paragraphs(text1)
             paras2 = split_into_paragraphs(text2)
-            
+
             if paras1 and paras2:  # If both texts have paragraphs
                 para1 = random.choice(paras1)
                 para2 = random.choice(paras2)
@@ -91,18 +97,17 @@ def _():
                     "text2": para2,
                     "is_same_text": 0
                 })
-        
+
         # Combine all samples
         all_samples = pure_samples + combined_samples
-        
+
         # Shuffle the samples
         random.shuffle(all_samples)
-        
+
         # Create Hugging Face dataset
         dataset = Dataset.from_list(all_samples)
-        
-        return dataset
 
+        return dataset
     return (
         Dataset,
         List,

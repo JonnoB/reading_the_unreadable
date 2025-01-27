@@ -1,6 +1,5 @@
 import json
 from tenacity import retry, wait_fixed, stop_after_attempt, retry_if_exception_type
-import time
 
 def truncate_to_n_tokens(text, tokenizer, max_tokens =100):
 

@@ -9,9 +9,12 @@ import pandas as pd
 import numpy as np
 import os
 
-from bbox_functions import postprocess_bbox, basic_box_data, reclassify_abandon_boxes, remove_duplicate_boxes
+from function_modules.bbox_functions import postprocess_bbox, basic_box_data, reclassify_abandon_boxes, remove_duplicate_boxes
 
+from pathlib import Path
 
+# Change working directory to project root
+os.chdir(Path(__file__).parent.parent)
 # Need to make it easier/clearer to have a mode which is for creating fine-tuning boxes vs boxes for final use
 
 

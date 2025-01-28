@@ -596,35 +596,134 @@ def basic_box_data(df):
 
     return df
 
-def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5, remove_abandon = True):
+def fill_column_gaps(bbox_df):
+    """
+    Add bounding boxes at the top and bottom of columns where they're missing.
+    Only processes pages with multiple columns and a single block.
+
+    Args:
+        bbox_df (pd.DataFrame): DataFrame containing bounding box information
+
+    Returns:
+        pd.DataFrame: DataFrame with additional bounding boxes added
+    """
+    # Create mask for eligible pages
+    page_col_counts = bbox_df.groupby('page_id')['column_number'].transform('max')
+    page_block_counts = bbox_df.groupby('page_id')['page_block'].transform('nunique')
+    eligible_mask = (page_col_counts > 1) & (page_block_counts == 1)
+
+    # Split into eligible and ineligible dataframes
+    eligible_df = bbox_df[eligible_mask].copy()
+    ineligible_df = bbox_df[~eligible_mask].copy()
+
+    new_boxes = []
+
+    # Process only if there are eligible pages
+    if not eligible_df.empty:
+        for page_id in eligible_df['page_id'].unique():
+            page_data = eligible_df[eligible_df['page_id'] == page_id]
+
+            # Find global minimum y1 and maximum y2 for the page
+            minimum_y1 = page_data['y1'].min()
+            maximum_y2 = page_data['y2'].max()
+
+            # Get filename and issue for this page
+            filename = page_data['filename'].iloc[0]
+            issue = page_data['issue'].iloc[0]
+
+            # Process each column (excluding column 0)
+            for col_num in page_data[page_data['column_number'] > 0]['column_number'].unique():
+                col_data = page_data[page_data['column_number'] == col_num]
+
+                if len(col_data) == 0:
+                    continue
+
+                # Get column boundaries
+                c1 = col_data['c1'].iloc[0]
+                c2 = col_data['c2'].iloc[0]
+
+                # Find top and bottom boxes in the column
+                top_box = col_data.loc[col_data['reading_order'].idxmin()]
+                bottom_box = col_data.loc[col_data['reading_order'].idxmax()]
+
+                # Add top box if needed
+                if top_box['y1'] > minimum_y1:
+                    new_boxes.append({
+                        'page_id': page_id,
+                        'filename': filename,
+                        'issue': issue,
+                        'class': 'text',
+                        'y1': minimum_y1,
+                        'y2': top_box['y1'],
+                        'x1': top_box['x1'],
+                        'x2': top_box['x2'],
+                        'c1': c1,
+                        'c2': c2,
+                        'column_number': col_num,
+                        'page_block': top_box['page_block'],
+                        'reading_order': -1  # Will be recalculated later
+                    })
+
+                # Add bottom box if needed
+                if bottom_box['y2'] < maximum_y2:
+                    new_boxes.append({
+                        'page_id': page_id,
+                        'filename': filename,
+                        'issue': issue,
+                        'class': 'text',
+                        'y1': bottom_box['y2'],
+                        'y2': maximum_y2,
+                        'x1': bottom_box['x1'],
+                        'x2': bottom_box['x2'],
+                        'c1': c1,
+                        'c2': c2,
+                        'column_number': col_num,
+                        'page_block': bottom_box['page_block'],
+                        'reading_order': -1  # Will be recalculated later
+                    })
+
+    # Add new boxes to the eligible DataFrame if any were created
+    if new_boxes:
+        new_boxes_df = pd.DataFrame(new_boxes)
+        new_boxes_df = basic_box_data(new_boxes_df)
+        new_boxes_df = print_area_meta(new_boxes_df)
+        eligible_df = pd.concat([eligible_df, new_boxes_df], ignore_index=True)
+
+    # Combine eligible and ineligible dataframes
+    result_df = pd.concat([eligible_df, ineligible_df], ignore_index=True)
+
+    return result_df
+
+
+def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5, remove_abandon = True, fill_columns = True):
 
     """ 
     This function performs all the post-processing on the bounding boxes to clean them up after being produced by DOCLAyout-Yolo
     and to make them ready for sending image crops to the image-to-text model. 
     The function assumes that the bounding boxes have been made by DocLayout-yolo. Other Yolo models may also work but this has not been tested.
     The function is a wrapper for functions from the bbox_functions module
-    
+
     Files require a page_id column which uniquely identifies each page
     """
-    
+
     bbox_all_df = df.copy()
 
     bbox_all_df['issue'] = bbox_all_df['filename'].str.split('_page_').str[0]
-    
+
     bbox_all_df = basic_box_data(bbox_all_df)
-    
+
     bbox_all_df = reclassify_abandon_boxes(bbox_all_df, top_fraction=0.1)
 
     bbox_df = bbox_all_df.copy()
-    
+
     if remove_abandon:
         bbox_df = bbox_all_df.loc[bbox_all_df['class']!='abandon'].copy()
-    
+
     # After re-classifying boxes as abandon and dropping the abandon boxes re-calculate the print area which should have changed
     bbox_df = print_area_meta(bbox_df)
-    
+
     bbox_df = assign_columns(bbox_df)
-    
+
 
     """ 
     This logic has been changed as it looks like keeping titles will make splitting up texts a lot easier and 
@@ -635,7 +734,7 @@ def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5, remove_abandon
                                (~bbox_df['class'].isin(['figure', 'table'])),
                                 'text',  # Value if condition is True
                                 bbox_df['class'])  # Value if condition is False
-    
+
     #Change class when there is only 1 column
     bbox_df['class'] = np.where((bbox_df['column_counts']==1) & 
                                 (bbox_df['column_number']!=0) &
@@ -655,7 +754,10 @@ def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5, remove_abandon
     bbox_df = adjust_y2_coordinates(bbox_df)
     #adjust the x limits to the column width if box is narrower than the column
     bbox_df = adjust_x_coordinates(bbox_df)
-    
+    #Should the columns be filled?
+    if fill_columns:
+        bbox_df = fill_column_gaps(bbox_df)
+   
     # Filter out boxes that are too small after y2 adjustment
     bbox_df['height'] = bbox_df['y2'] - bbox_df['y1']  
     bbox_df = bbox_df[bbox_df['height'] >= min_height]
@@ -666,10 +768,10 @@ def postprocess_bbox(df, min_height = 10, width_multiplier = 1.5, remove_abandon
 
     # Adjust y2 again as the box deletion and merging has changed boundaries
     bbox_df = adjust_y2_coordinates(bbox_df)
-    
+
     #due to merging and deletion re-do reading order
     bbox_df = create_reading_order(bbox_df)
-    
+
     #add in bbox ID
     bbox_df['box_page_id'] = "B" + bbox_df['page_block'].astype(str) + "C"+bbox_df['column_number'].astype(str)  + "R" + bbox_df['reading_order'].astype(str) 
     bbox_df['ratio'] = bbox_df['height']/bbox_df['width']  #box ratio

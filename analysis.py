@@ -249,34 +249,9 @@ def _(experiment_df):
 
 
 @app.cell
-def _(exp_mean_cer):
-    exp_mean_cer.loc[exp_mean_cer['dataset'] == 'NCSE', ['cer_score', 'deskew', 'max_ratio']]
-    return
-
-
-@app.cell
 def _(experiment_df):
     experiment_df[['dataset', 'deskew', 'max_ratio', 'cer_score']].groupby(['dataset', 'deskew', 'max_ratio'])['cer_score'].agg(['mean', 'median'])
     return
-
-
-@app.cell
-def _(experiment_df, plt, sns):
-    sns.catplot(data = experiment_df[['dataset', 'deskew', 'max_ratio', 'cer_score']], x = 'max_ratio', y = 'cer_score',
-                kind = 'box',
-               hue = 'dataset',
-    col = 'deskew')
-    plt.ylim([0, 0.1])
-
-    plt.show()
-    return
-
-
-@app.cell
-def _(experiment_df):
-    experiment_df2 = experiment_df
-    experiment_df2['model'] = experiment_df2['file']
-    return (experiment_df2,)
 
 
 @app.cell

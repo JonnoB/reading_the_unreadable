@@ -23,6 +23,10 @@ client = Mistral(api_key=api_key)
 processed_jobs_folder = 'data/processed_jobs/ncse'
 download_jobs_folder = 'data/download_jobs/ncse'
 
+dataframe_folder = os.path.join(download_jobs_folder, 'dataframes')
+
+os.makedirs(dataframe_folder, exist_ok=True)
+
 
 for file in os.listdir(processed_jobs_folder):
     print(file)
@@ -43,4 +47,4 @@ for file in os.listdir(processed_jobs_folder):
                   
     df = pd.concat(df, ignore_index=True)
 
-    df.to_parquet(json_folder+".parquet")
+    df.to_parquet(os.path.join(dataframe_folder,file+".parquet"))

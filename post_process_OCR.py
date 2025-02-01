@@ -110,13 +110,13 @@ def _(
             DataFrame containing bounding box coordinates and classifications.
             Required columns: 'x1', 'y1', 'x2', 'y2', 'class'
             Optional column: 'reading_order' (if show_reading_order=True)
-        
+
         image_path : str
             Path to the input image file.
-        
+
         figsize : tuple, optional (default=(15,15))
             Figure size in inches (width, height).
-        
+
         show_reading_order : bool, optional (default=False)
             If True, draws arrows between boxes indicating reading order sequence.
             Requires 'reading_order' column in the DataFrame.
@@ -519,7 +519,7 @@ def _(pd):
 @app.cell
 def _(merge_consecutive_titles, pd, split_and_reclassify):
     test_set_df = pd.read_csv('data/download_jobs/experiments/dataframe/NCSE_deskew_True_max_ratio_1.csv')
-    test_set_df['class'] = 'text'
+    #test_set_df['class'] = 'text'
 
     temp = split_and_reclassify(test_set_df)
 
@@ -536,6 +536,27 @@ def _(temp):
 @app.cell
 def _(temp2):
     temp2[['class', 'class2', 'sub_order', 'content']]
+    return
+
+
+@app.cell
+def _(merge_consecutive_titles, os, pd, split_and_reclassify):
+    returned_docs_folder = 'data/download_jobs/ncse/dataframes'
+
+
+    returned_docs = pd.concat([pd.read_parquet(os.path.join(returned_docs_folder, x)) for x in os.listdir(returned_docs_folder)])
+
+
+    #test_set_df['class'] = 'text'
+
+    _temp = split_and_reclassify(returned_docs)
+
+    temp3 = merge_consecutive_titles(_temp)
+    return returned_docs, returned_docs_folder, temp3
+
+
+@app.cell
+def _():
     return
 
 

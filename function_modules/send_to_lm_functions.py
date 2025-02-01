@@ -158,7 +158,7 @@ def knit_string_list(content_list: list) -> str:
     return result
 
 
-def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=10):
+def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=20):
     """
     Split an image into segments based on a maximum aspect ratio.
     The final segment will maintain the same ratio as other segments.

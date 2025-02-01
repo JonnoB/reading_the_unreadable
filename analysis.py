@@ -28,7 +28,7 @@ def _():
     results_folder = "data/model_performance"
 
     BLN600_GT_path = "data/BLN600/Ground Truth"
-    NCSE_GT_path = "data/transcripts/machine_response/"
+    NCSE_GT_path = "data/transcripts/ground_truth/"
 
     data_folder = "ffff"
 
@@ -36,12 +36,7 @@ def _():
 
 
     _NCSE_GT = load_txt_files_to_dataframe(NCSE_GT_path, 'GT')
-    #
-    #
-    #
-    # NEEEEEEEEDDDDDDDDDDDDSS TO BEEEEEEEEEE RTEPLACED WHEN GT READY!!!!!!!!!!!!!!!!!!!!
-    #
-    #
+
     GT_df = pd.concat([_BLN600_GT, _NCSE_GT])
 
     GT_df['file_name'] = GT_df['file_name'].str.replace("_box_page_id", "")
@@ -64,6 +59,84 @@ def _():
         save_figs_path,
         sns,
     )
+
+
+@app.cell
+def _(mo):
+    mo.md(
+        r"""
+        # Bounding-Box poat processing quality analysis
+
+        By measuring the overlap and coverage of the bounding boxes produced by the two post-processing methods relative to the bounding-boxes producced by DocLayout-Yolo we can evaluate which post-processing if any should be chosen. The results show that in generall the two post-processing methods perform similarly, both generally reducing overlap or leaving it unchanged and increasing coverage by the same amount when controlling for periodical. However, in the case of the Northern Star the column filling approach provides a an increase of almost 10 percentage points over the simpler post-processing method and 24 percentage points in comparison to no post-processing. This increase takes the total median coverage to 100\% compared to 92\% and 79\% for simple post-processing and no-post processing respectively. 
+        The Northern Star behaves differently to the other periodicals due to the size of the page and that it has 4 or 5 columns which is much more than the other papers.
+
+        As a result, all the papers will use the simple post-processing without column filling apart from the Northern Star which will use column filling.
+        """
+    )
+    return
+
+
+@app.cell
+def _(os, pd):
+    save_folder = "data/overlap_coverage"
+    source_folders = ["post_process", 'post_process_fill', "post_process_raw"]
+
+    # List to store individual dataframes
+    dfs = []
+
+    for method in source_folders:
+        method_folder = os.path.join(save_folder, method)
+
+        # Process each file in the method folder
+        for file in os.listdir(method_folder):
+
+            # Load the parquet file
+            df = pd.read_parquet(os.path.join(method_folder, file))
+
+            # Add method column
+            df['method'] = method
+            df['periodical'] = file
+
+            dfs.append(df)
+
+    # Combine all dataframes
+    combined_df = pd.concat(dfs, ignore_index=True)
+    _df = combined_df.loc[combined_df['method']=="post_process_raw", ['page_id','perc_print_area_overlap', 'perc_print_area_coverage']]
+    combined_df = combined_df.merge(_df, on = 'page_id', suffixes = ['', "_raw"])
+    combined_df['overlap_diff'] = combined_df['perc_print_area_overlap'] - combined_df['perc_print_area_overlap_raw']
+    combined_df['coverage_diff'] = combined_df['perc_print_area_coverage'] - combined_df['perc_print_area_coverage_raw']
+
+    combined_df['p'] = combined_df['periodical'].apply(lambda x: x.split("_")[0])
+
+    combined_df.loc[combined_df['method']!='post_process_raw'].groupby(['p', 'method']).agg(
+        overlap_mean=('overlap_diff', 'mean'),
+        overlap_median=('overlap_diff', 'median'),
+        coverage_mean=('coverage_diff', 'mean'),
+        coverage_median=('coverage_diff', 'median')
+    ).round(2)
+    return (
+        combined_df,
+        df,
+        dfs,
+        file,
+        method,
+        method_folder,
+        save_folder,
+        source_folders,
+    )
+
+
+@app.cell
+def _(combined_df):
+    combined_df.groupby([ 'p', 'method'])['perc_print_area_overlap'].agg(['mean', 'median']).round(2)
+
+    combined_df.loc[:].groupby(['p', 'method']).agg(
+        overlap_mean=('perc_print_area_overlap', 'mean'),
+        overlap_median=('perc_print_area_overlap', 'median'),
+        coverage_mean=('perc_print_area_coverage', 'mean'),
+        coverage_median=('perc_print_area_coverage', 'median')
+    ).round(2)
+    return
 
 
 @app.cell
@@ -148,40 +221,42 @@ def _(experiment_df, np, os, pd, plt, save_figs_path, sns):
 
     _plot_df['max_ratio2'] = np.where(_plot_df['max_ratio']==1000, 'Inf', _plot_df['max_ratio'])
 
-    g = sns.relplot(data = _plot_df, x = 'max_ratio2', y = 'cer_score', hue = 'dataset', style = 'deskew', 
-                col = 'Average', kind = 'line')
 
+    #_plot_df = _plot_df.loc[_plot_df['max_ratio2']!='1.5']
 
-    g.fig.suptitle("The Effect of Deskew and Image Cropping on CER scores", fontsize=16, y = 1.01)
+    g = sns.FacetGrid(data=_plot_df, col='Average', row = 'dataset' ,sharey=False)
+    g.map_dataframe(sns.lineplot, x='max_ratio2', y='cer_score', hue='deskew')
 
-
+    g.fig.suptitle("The Effect of Deskew and Image Cropping on CER scores", fontsize=16, y=1.01)
     g.set_axis_labels('Maximum length to width ratio', "CER score")
 
+    # Add legend (since we're using a different construction method)
+    g.add_legend()
 
     plt.savefig(os.path.join(save_figs_path,'deskew_crop_experiment.png'), 
                 bbox_inches='tight', 
                 dpi=300, 
-                pad_inches=0.5)  # Adjust padding
+                pad_inches=0.5)
 
     plt.show()
     return exp_mean_cer, exp_median_cer, g
 
 
 @app.cell
-def _(exp_mean_cer):
-    exp_mean_cer.loc[exp_mean_cer['dataset'] != 'NCSE', ['cer_score', 'deskew', 'max_ratio']]
+def _(experiment_df):
+    experiment_df.groupby(['dataset', 'max_ratio'])['total_tokens'].agg(['mean', 'median'])
     return
 
 
 @app.cell
-def _():
-    1-0.04/0.29
+def _(exp_mean_cer):
+    exp_mean_cer.loc[exp_mean_cer['dataset'] == 'NCSE', ['cer_score', 'deskew', 'max_ratio']]
     return
 
 
 @app.cell
 def _(experiment_df):
-    experiment_df[['dataset', 'deskew', 'max_ratio', 'cer_score']].groupby(['dataset', 'deskew', 'max_ratio'])['cer_score'].describe()
+    experiment_df[['dataset', 'deskew', 'max_ratio', 'cer_score']].groupby(['dataset', 'deskew', 'max_ratio'])['cer_score'].agg(['mean', 'median'])
     return
 
 
@@ -202,12 +277,6 @@ def _(experiment_df):
     experiment_df2 = experiment_df
     experiment_df2['model'] = experiment_df2['file']
     return (experiment_df2,)
-
-
-@app.cell
-def _(experiment_df2, reshape_metrics):
-    reshape_metrics(experiment_df2,  spread_col='dataset', agg_func='mean', round_digits=2)
-    return
 
 
 @app.cell

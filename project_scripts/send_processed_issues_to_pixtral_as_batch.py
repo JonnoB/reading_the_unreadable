@@ -26,12 +26,12 @@ os.chdir(Path(__file__).parent.parent)
 # Dictionary mapping parquet files to their corresponding image folders
 image_folder = os.environ['image_folder']
 path_mapping = {
-    'CLD': os.path.join(image_folder, 'converted/all_files_png_120/Leader_issue_PDF_files'),
-    'EWJ': os.path.join(image_folder, 'converted/all_files_png_120/English_Womans_Journal_issue_PDF_files'),
-    'MRP': os.path.join(image_folder, 'converted/all_files_png_120/Monthly_Repository_issue_PDF_files'),
-    'TTW': os.path.join(image_folder, 'converted/all_files_png_120/Tomahawk_issue_PDF_files'),
-    'TEC': os.path.join(image_folder, 'converted/all_files_png_120/Publishers_Circular_issue_PDF_files'),
-    'NS': os.path.join(image_folder, 'converted/all_files_png_200/Northern_Star_issue_PDF_files')
+    'English_Womans_Journal_issue_PDF_files_1056.parquet': os.path.join(image_folder, 'converted/all_files_png_120/English_Womans_Journal_issue_PDF_files'),
+    'Leader_issue_PDF_files_1056.parquet': os.path.join(image_folder, 'converted/all_files_png_120/Leader_issue_PDF_files'),
+    'Monthly_Repository_issue_PDF_files_1056.parquet': os.path.join(image_folder, 'converted/all_files_png_120/Monthly_Repository_issue_PDF_files'),
+    'Tomahawk_issue_PDF_files_1056.parquet': os.path.join(image_folder, 'converted/all_files_png_120/Tomahawk_issue_PDF_files'),
+    'Publishers_Circular_issue_PDF_files_1056.parquet': os.path.join(image_folder, 'converted/all_files_png_120/Publishers_Circular_issue_PDF_files'),
+    'Northern_Star_issue_PDF_files_2112.parquet': os.path.join(image_folder, 'converted/all_files_png_200/Northern_Star_issue_PDF_files')
 }
 
 # path_mapping = {
@@ -44,9 +44,9 @@ client = Mistral(api_key=api_key)
 
 # Prompt dictionary
 prompt_dict = {
-    'text': "You are an expert at transcription. The text is from a 19th century English newspaper. Please transcribe exactly, including linebreaks, the text found in the image. Do not add any commentary. Do not use markdown please transcribe using plain text only.",
+    'text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.""",
     'figure': 'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
-    'table': 'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'
+    'table': 'Please extract the table from the image taken from a 19th century English newspaper as a tab separated values (tsv) text file. Do not add any commentary'
 }
 
 # Process each file
@@ -77,7 +77,9 @@ for parquet_file, image_path in path_mapping.items():
         images_folder=image_path,
         prompt_dict=prompt_dict,
         client=client,
-        output_file=output_file
+        output_file=output_file,
+        deskew=False,
+        max_ratio=1.5
     )
     
     print(f"Completed processing {parquet_file}")

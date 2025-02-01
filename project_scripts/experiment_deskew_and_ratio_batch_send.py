@@ -13,12 +13,13 @@ client = Mistral(api_key=api_key)
 
 # Prompt dictionary
 prompt_dict = {
+    # Re-running the code experiment again with the updated code, changing the prompt to be more specific
     'text': """The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.""",
     'figure': 'Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary',
-    'table': 'Please extract the table from the image taken from a 19th century English newspaper. Use markdown, do not add any commentary'
+    'table':  'Please extract the table from the image taken from a 19th century English newspaper as a tab separated values (tsv) text file. Do not add any commentary'
 }
 
-ncse_image_path = 'data/converted/cropped_images'
+ncse_image_path = 'data/converted/ncse_cropped_images'
 
 BLN_image_path = 'data/BLN600/Images_jpg'
 
@@ -61,7 +62,7 @@ for image_path, bbox_df, dataset_name in datasets:
 
         file_name = f"{dataset_name}_deskew_{str(deskew)}_max_ratio_{str(max_ratio)}"
         # Create output filename based on the experiment name
-        output_file = f'data/processed_jobs/{file_name}.csv'
+        output_file = f'data/processed_jobs/experiments/{file_name}.csv'
 
         # This ensures when the results are downloaded they are saved with the filename that matches the experiment
         bbox_df['issue'] = f'{file_name}_' + ((bbox_df.index // 100) + 1).astype(str)

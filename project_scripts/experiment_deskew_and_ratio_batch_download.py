@@ -34,7 +34,7 @@ for dataset in ['NCSE','BLN600']:
         # Example usage
         results = download_processed_jobs(
             client=client,
-            jobs_file=f'data/processed_jobs/{file_name}.csv',
+            jobs_file=f'data/processed_jobs/experiments/{file_name}.csv',
             output_dir=json_dir,
             log_file=f'data/download_jobs/experiments/{file_name}_log.csv'
         )

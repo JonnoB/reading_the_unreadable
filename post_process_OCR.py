@@ -12,7 +12,7 @@ def _():
     import os 
     from tqdm import tqdm
 
-    image_path = os.environ['image_path']
+    image_path = os.environ['image_folder']
 
     data = os.path.join('data', "download_jobs/EWJ.parquet")
 
@@ -93,12 +93,141 @@ def _(
     os,
     path_mapping,
     periodical_mapping,
-    plot_boxes_on_image,
     raw_bboxes_df,
     test2,
 ):
     import numpy as np 
     import matplotlib.pyplot as plt
+    import cv2
+
+    def plot_boxes_on_image2(df, image_path, figsize=(15,15), show_reading_order=False, fill_boxes=True, fill_alpha=0.2):
+        """
+        Plot bounding boxes and their classifications on a page image with optional reading order visualization.
+
+        Parameters:
+        -----------
+        df : pandas.DataFrame
+            DataFrame containing bounding box coordinates and classifications.
+            Required columns: 'x1', 'y1', 'x2', 'y2', 'class'
+            Optional column: 'reading_order' (if show_reading_order=True)
+        
+        image_path : str
+            Path to the input image file.
+        
+        figsize : tuple, optional (default=(15,15))
+            Figure size in inches (width, height).
+        
+        show_reading_order : bool, optional (default=False)
+            If True, draws arrows between boxes indicating reading order sequence.
+            Requires 'reading_order' column in the DataFrame.
+
+        Returns:
+        --------
+        matplotlib.figure.Figure
+            The figure object containing the plotted image with bounding boxes.
+
+        Notes:
+        ------
+        - The function uses predefined colors for specific classes:
+            * 'text': Red
+            * 'title': Green
+            * 'figure': Blue
+        - Additional classes are assigned colors automatically using a rainbow colormap.
+        - Each box is labeled with its class name.
+        - A legend is included showing all class types and their corresponding colors.
+        """
+        # Read the image
+        image = cv2.imread(image_path)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
+
+        # Create figure and axes
+        fig, ax = plt.subplots(figsize=figsize)
+
+        # Display the image
+        ax.imshow(image)
+
+        # Define fixed colors for specific classes
+        fixed_colors = {
+            'text': '#FF0000',  # Red
+            'title': '#00FF00',       # Green
+            'figure': '#0000FF'       # Blue
+        }
+
+        # Create a color map for any other classes
+        unique_classes = [cls for cls in df['class'].unique() if cls not in fixed_colors]
+        if unique_classes:  # If there are other classes
+            additional_colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_classes)))
+            additional_color_dict = dict(zip(unique_classes, additional_colors))
+        else:
+            additional_color_dict = {}
+
+        # Combine fixed and additional colors
+        class_color_dict = {**fixed_colors, **additional_color_dict}
+
+        # Plot each bounding box
+        for idx, row in df.iterrows():
+            x1, y1, x2, y2 = row['x1'], row['y1'], row['x2'], row['y2']
+            box_class = row['class']
+
+            # Create rectangle patch
+            width = x2 - x1
+            height = y2 - y1
+
+            # Get color for this class
+            color = class_color_dict[box_class]
+
+            # Draw rectangle
+            rect = plt.Rectangle((x1, y1), width, height,
+                               fill=fill_boxes,  # Use the fill_boxes parameter
+                               facecolor=color if fill_boxes else 'none',  # Set fill color if filling
+                               alpha=fill_alpha if fill_boxes else 1,  # Set alpha if filling
+                               color=color,
+                               linewidth=2)
+            ax.add_patch(rect)
+
+            # Optionally add class labels
+            ax.text(x1, y1-5, box_class, 
+                    color=color,
+                    fontsize=8,
+                    bbox=dict(facecolor='white', alpha=0.7))
+
+
+        # Add reading order arrows if requested
+        if show_reading_order and 'reading_order' in df.columns:
+            # Sort by reading order
+            df_sorted = df.sort_values('reading_order')
+
+            # Calculate center points
+            df_sorted['center_x'] = (df_sorted['x1'] + df_sorted['x2']) / 2
+            df_sorted['center_y'] = (df_sorted['y1'] + df_sorted['y2']) / 2
+
+            # Draw arrows between consecutive boxes
+            for i in range(len(df_sorted)-1):
+                start = (df_sorted.iloc[i]['center_x'], df_sorted.iloc[i]['center_y'])
+                end = (df_sorted.iloc[i+1]['center_x'], df_sorted.iloc[i+1]['center_y'])
+
+                ax.annotate('',
+                           xy=end,
+                           xytext=start,
+                           arrowprops=dict(arrowstyle='->',
+                                         color='black',
+                                         linewidth=2,
+                                         mutation_scale=20),  # Makes the arrow head bigger
+                           )
+
+        # Remove axes
+        ax.set_axis_off()
+
+        # Add legend
+        legend_elements = [plt.Rectangle((0,0),1,1, facecolor=color, 
+                                       label=class_name)
+                          for class_name, color in class_color_dict.items()]
+        ax.legend(handles=legend_elements, loc='center left', bbox_to_anchor=(1, 0.5))
+
+        plt.tight_layout()
+        return fig 
+
+
 
     def trim_white_space(image):
         # Assuming white is [255, 255, 255]
@@ -138,7 +267,7 @@ def _(
             _image_path = path_mapping[_periodical_code]
 
             # Create first plot and convert to image
-            fig1 = plot_boxes_on_image(bboxes_df[bboxes_df['filename']==_filename], 
+            fig1 = plot_boxes_on_image2(bboxes_df[bboxes_df['filename']==_filename], 
                                       image_path = os.path.join(_image_path, _filename), 
                                       show_reading_order=True)
             # Convert figure to numpy array
@@ -149,7 +278,7 @@ def _(
             _temp = raw_bboxes_df[raw_bboxes_df['filename']==_filename].copy()
             _temp['class'] = np.where(_temp['class']=='plain text', 'text', _temp['class'])
             _temp['class'] = np.where(_temp['class'].isin(['text', 'figure', 'table']), _temp['class'], 'other')
-            fig2 = plot_boxes_on_image(_temp, 
+            fig2 = plot_boxes_on_image2(_temp, 
                                       image_path = os.path.join(_image_path, _filename), 
                                       show_reading_order=True)
             fig2.canvas.draw()
@@ -159,7 +288,7 @@ def _(
             _image1_trimmed = trim_white_space(image1)
             _image2_trimmed = trim_white_space(image2)
             _image1_padded, _image2_padded = pad_to_match_height(_image1_trimmed, _image2_trimmed)
-            combined_image = np.hstack((_image1_padded, _image2_padded))
+            combined_image = np.hstack((_image2_padded, _image1_padded))
 
             # Display combined image
             plt.figure(figsize=(30,15))
@@ -172,12 +301,14 @@ def _(
     return (
         combined_image,
         combined_image_folder,
+        cv2,
         fig1,
         fig2,
         image1,
         image2,
         np,
         pad_to_match_height,
+        plot_boxes_on_image2,
         plt,
         trim_white_space,
     )

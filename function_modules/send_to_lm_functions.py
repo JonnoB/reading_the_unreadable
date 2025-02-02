@@ -660,8 +660,7 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
     
     return "\n".join(jsonl_lines)
 
-
-def create_batch_job(client, base_filename, encoded_images, prompt_dict, job_type = 'testing'):
+def create_batch_job(client, base_filename, encoded_images, prompt_dict, job_type='testing'):
     """
     Create a batch job and return job details including original filename information.
     Assumes only a single issue is being batched
@@ -677,43 +676,35 @@ def create_batch_job(client, base_filename, encoded_images, prompt_dict, job_typ
     Returns:
         tuple: (job_id, original_filename)
     """
-    # Get the base filename from the issue
-    temp_file_path = f"temp_{base_filename}.jsonl"
     target_filename = f"{base_filename}.jsonl"  # The final filename we want
 
-    try:
-        # Write the JSONL content to the temporary file
-        jsonl_content = create_jsonl_content(encoded_images, prompt_dict)
-        with open(temp_file_path, 'w') as f:
-            f.write(jsonl_content)
+    # Create JSONL content
+    jsonl_content = create_jsonl_content(encoded_images, prompt_dict)
+    
+    # Convert string content to bytes
+    content_bytes = jsonl_content.encode('utf-8')
+    
+    # Upload the file using the buffer
+    batch_data = client.files.upload(
+        file={
+            "file_name": target_filename,
+            "content": content_bytes
+        },
+        purpose="batch"
+    )
 
-        # Upload the file
-        with open(temp_file_path, 'rb') as f:
-            batch_data = client.files.upload(
-                file={
-                    "file_name": f"{base_filename}.jsonl",
-                    "content": f
-                },
-                purpose="batch"
-            )
+    # Create the job with metadata including the target filename
+    created_job = client.batch.jobs.create(
+        input_files=[batch_data.id],
+        model="pixtral-12b-2409",
+        endpoint="/v1/chat/completions",
+        metadata={
+            "job_type": job_type,
+            "target_filename": target_filename
+        }
+    )
 
-        # Create the job with metadata including the target filename
-        created_job = client.batch.jobs.create(
-            input_files=[batch_data.id],
-            model="pixtral-12b-2409",
-            endpoint="/v1/chat/completions",
-            metadata={
-                "job_type": job_type,
-                "target_filename": target_filename  # Store the target filename in metadata
-            }
-        )
-
-        return created_job.id, target_filename
-
-    finally:
-        # Clean up temporary file
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+    return created_job.id, target_filename
 
 
 def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_file='data/processed_jobs.csv', 

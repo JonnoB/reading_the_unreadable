@@ -9,6 +9,7 @@ def _():
     import pandas as pd
     from pathlib import Path
     from function_modules.bbox_functions import plot_boxes_on_image
+    from function_modules.analysis_functions import is_title, split_and_reclassify, merge_consecutive_titles
     import os 
     from tqdm import tqdm
 
@@ -51,6 +52,8 @@ def _():
         data,
         data_path,
         image_path,
+        is_title,
+        merge_consecutive_titles,
         os,
         path_mapping,
         pd,
@@ -58,6 +61,7 @@ def _():
         plot_boxes_on_image,
         raw_bbox_path,
         raw_bboxes_df,
+        split_and_reclassify,
         tqdm,
     )
 
@@ -364,126 +368,7 @@ def _(bboxes_df, test2):
 
 
 @app.cell
-def _(pd):
-    def is_title(text):
-        # Function to check if a string meets title criteria
-        vowels = set('AEIOU')
-
-        # Check if the text is all uppercase
-        if not text.upper() == text:
-            return False
-
-        # Split by any character that's not a letter or space
-        import re
-        word_groups = re.split(r'[^A-Z\s]', text)
-
-        # For each continuous group of words
-        for group in word_groups:
-            # Remove spaces and check if this group meets criteria
-            letters_only = group.replace(' ', '')
-            if len(letters_only) >= 5:  # Check length
-                vowel_count = sum(1 for c in letters_only if c in vowels)
-                if vowel_count >= 2:  # Check vowels
-                    return True
-        return False
-
-    def split_and_reclassify(bbox_df):
-
-
-        new_rows = []
-
-        for idx, row in bbox_df.iterrows():
-            text = row['content']
-            paragraphs = text.split('\n\n')
-
-            if len(paragraphs) == 1:
-                row['class2'] = row['class']
-                row['sub_order'] = 1
-                new_rows.append(row)
-            else:
-                for i, para in enumerate(paragraphs, 1):
-                    if para.strip():  # Skip empty paragraphs
-                        new_row = row.copy()
-                        new_row['content'] = para.strip()
-                        new_row['sub_order'] = i
-
-                        # Check each paragraph against the new title criteria
-                        if is_title(para.strip()):
-                            new_row['class2'] = 'title'
-                        else:
-                            new_row['class2'] = row['class']
-
-                        new_rows.append(new_row)
-
-        # Create new dataframe from the processed rows
-        new_df = pd.DataFrame(new_rows).reset_index(drop=True)
-
-        return new_df
-
-
-    def merge_consecutive_titles(df):
-        # Create a copy to avoid modifying the original dataframe
-        result_df = df.copy()
-
-        # Initialize list to store indices to drop
-        indices_to_drop = []
-
-        # Initialize variables to track current merge group
-        current_content = []
-        current_start_idx = None
-
-        # Iterate through rows
-        for i in range(len(result_df)):
-            current_row = result_df.iloc[i]
-
-            # If we're not at the last row, get next row for comparison
-            if i < len(result_df) - 1:
-                next_row = result_df.iloc[i + 1]
-
-                # Check if current and next rows should be merged
-                should_merge = (
-                    current_row['class2'] == 'title' and
-                    next_row['class2'] == 'title' and
-                    current_row['page_id'] == next_row['page_id'] and
-                    current_row['box_page_id'] == next_row['box_page_id'] and
-                    current_row['sub_order'] + 1 == next_row['sub_order']
-                )
-
-                if should_merge:
-                    # Start new merge group if not already started
-                    if current_start_idx is None:
-                        current_start_idx = i
-                        current_content = [current_row['content']]
-
-                    current_content.append(next_row['content'])
-                    indices_to_drop.append(i + 1)
-
-                elif current_start_idx is not None:
-                    # Merge the accumulated content into the first row
-                    merged_content = '\n'.join(current_content)
-                    result_df.at[current_start_idx, 'content'] = merged_content
-
-                    # Reset tracking variables
-                    current_content = []
-                    current_start_idx = None
-
-            elif current_start_idx is not None:
-                # Handle the last merge group if exists
-                merged_content = '\n'.join(current_content)
-                result_df.at[current_start_idx, 'content'] = merged_content
-
-        # Drop the merged rows using boolean indexing instead of index labels
-        if indices_to_drop:
-            result_df = result_df[~result_df.index.isin(indices_to_drop)]
-
-        # Reset index
-        result_df = result_df.reset_index(drop=True)
-
-        # Recalculate sub_order within each box_page_id group
-        result_df['sub_order'] = result_df.groupby(['page_id', 'box_page_id']).cumcount() + 1
-
-        return result_df
-
+def _(is_title):
     # Usage:
     # First run the split_and_reclassify function
     # df_split = split_and_reclassify(bbox_df)
@@ -501,19 +386,13 @@ def _(pd):
         "HELLO WORLD",          # Should be title
         "THE END.",             # Should be title (ignoring period)
         "A.B HELLO WORLD C.D",  # Should be title (HELLO WORLD meets criteria)
-        "NO VOWELS NTH"         # Should not be title (not enough vowels)
+        "NYNTH"         # Should not be title (not enough vowels)
     ]
 
     # Test the function
     for text in test_texts:
         print(f"{text}: {'Is title' if is_title(text) else 'Not title'}")
-    return (
-        is_title,
-        merge_consecutive_titles,
-        split_and_reclassify,
-        test_texts,
-        text,
-    )
+    return test_texts, text
 
 
 @app.cell

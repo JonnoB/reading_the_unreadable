@@ -14,7 +14,7 @@ def _():
     import pandas as pd
     import numpy as np
     import os
-    from function_modules.analysis_functions import load_txt_files_to_dataframe, reshape_metrics,dataframe_to_latex_with_bold_extreme
+    from function_modules.analysis_functions import load_txt_files_to_dataframe, reshape_metrics,dataframe_to_latex_with_bold_extreme, clean_text
     from jiwer import cer
     import seaborn as sns
     import matplotlib.pyplot as plt
@@ -45,6 +45,7 @@ def _():
         GT_df,
         NCSE_GT_path,
         cer,
+        clean_text,
         data_folder,
         dataframe_to_latex_with_bold_extreme,
         find_dotenv,
@@ -154,7 +155,7 @@ def _(mo):
 
 
 @app.cell
-def _(GT_df, cer, os, pd):
+def _(GT_df, cer, clean_text, os, pd):
     experiment_folder = "data/download_jobs/experiments/dataframe"
     experiment_csvs = os.listdir(experiment_folder)
     experiment_df = []
@@ -194,6 +195,13 @@ def _(GT_df, cer, os, pd):
 
     # Combine all dataframes
     experiment_df = pd.concat(experiment_df, ignore_index=True).merge(GT_df, left_on ='file_name', right_on ='file_name')
+
+    #clean line breaks and set to lower
+    experiment_df['content'] = experiment_df['content'].apply(clean_text)
+    experiment_df['content'] = experiment_df['content'].str.lower()
+
+    experiment_df['GT'] = experiment_df['GT'].apply(clean_text)
+    experiment_df['GT'] = experiment_df['GT'].str.lower()
 
     experiment_df['cer_score'] = experiment_df.apply(lambda x: cer(x['GT'], x['content']), axis=1)
     return (
@@ -267,7 +275,15 @@ def _(mo):
 
 
 @app.cell
-def _(GT_df, cer, load_txt_files_to_dataframe, os, pd, results_folder):
+def _(
+    GT_df,
+    cer,
+    clean_text,
+    load_txt_files_to_dataframe,
+    os,
+    pd,
+    results_folder,
+):
     results_df = []
 
     for _folder in os.listdir(results_folder):
@@ -282,7 +298,16 @@ def _(GT_df, cer, load_txt_files_to_dataframe, os, pd, results_folder):
     results_df = pd.concat(results_df, ignore_index=True).merge(GT_df, on ='file_name')
     results_df[['dataset', 'model']] = results_df['folder'].str.split('_', n=1, expand=True)
 
+    #clean line breaks and set to lower
+    results_df['content'] = results_df['content'].apply(clean_text)
+    results_df['content'] = results_df['content'].str.lower()
+
+    results_df['GT'] = results_df['GT'].apply(clean_text)
+    results_df['GT'] = results_df['GT'].str.lower()
+
     results_df['cer_score'] = results_df.apply(lambda x: cer(x['GT'], x['content']), axis=1)
+
+    results_df['no_error'] = results_df['cer_score']==0 
     return (results_df,)
 
 
@@ -325,6 +350,11 @@ def _(mo):
         it is often nice to see an example of the algoritm in action. the below takes a specific image, and calculates the CER for each model. 
 
         The paper will then show the image and the CER Scores and the supplementary material will show the full texts
+
+
+        This is a very interesting image, because there is a scratch through it 'NS2_1843-04-01_page_4_B0C5R42'. GOT and tesseract do very well even outperforming Pixtral, however, it would be confusing to show this as it doesn't represent overall performance. As such I will use 'NS2_1843-04-01_page_4_B0C1R1' as this is pretty close to the mean for all and at least in the correct order. 
+
+
         """
     )
     return
@@ -332,58 +362,37 @@ def _(mo):
 
 @app.cell
 def _(results_df):
-    results_df.loc[results_df['file_name']=='NS2_1843-04-01_page_4_B0C5R42',['model', 'cer_score'] ].round(2)
-    return
+    # Find an example that is broadly representative of the average scores
+    results_df2 = results_df.copy()
+
+    results_df2['rank'] = results_df2.groupby('file_name')['cer_score'].rank(method='min')
+    results_df2['med_score'] = results_df2.groupby('file_name')['cer_score'].transform('median')
+    results_df2['diff_score'] =results_df2['med_score'] - results_df2['cer_score']
+
+
+    results_df2.loc[(results_df2['model']=='pixtral') & (results_df2['rank']==1) & (~results_df2['folder'].str.contains('BLN')) & (results_df2['cer_score']<0.08)].sort_values('diff_score')
+
+    return (results_df2,)
 
 
 @app.cell
 def _(results_df):
-    results_df.loc[results_df['file_name'].isin(['EWJ_1859-03-01_page_17_B0C1R2', 'NS2_1843-04-01_page_4_B0C5R42']),
-    ['file_name','model', 'cer_score'] ].round(2)
+    results_df.loc[results_df['file_name']=='NS2_1843-04-01_page_4_B0C1R1',['model', 'cer_score'] ].round(2)
     return
-
-
-@app.cell
-def _(results_df):
-    example_df = results_df.loc[results_df['file_name'].isin(['EWJ_1859-03-01_page_17_B0C1R2', 'NS2_1843-04-01_page_4_B0C5R42']),
-    ['file_name','model', 'cer_score'] ].round(2)
-
-    example_df['file_name'] = example_df['file_name'].str.extract('^([^_]*)')
-
-    example_df
-    return (example_df,)
-
-
-@app.cell
-def _(dataframe_to_latex_with_bold_extreme, example_df, reshape_metrics):
-    example_table = reshape_metrics(example_df,  spread_col='file_name', agg_func='mean', round_digits=2).reset_index()
-
-    example_table_latex = dataframe_to_latex_with_bold_extreme(example_table, extreme='min',  model_column='model', caption ='xxxx',
-                                        label = 'tab:example_results')
-
-    print(example_table)
-    example_table_latex
-    return example_table, example_table_latex
 
 
 @app.cell
 def _(results_df):
     output_contents = results_df.loc[results_df['file_name'].isin(
-        ['EWJ_1859-03-01_page_17_B0C1R2', 'NS2_1843-04-01_page_4_B0C5R42']),['file_name','model','cer_score', 'content'] ]
+        ['NS2_1843-04-01_page_4_B0C1R1']),['file_name','model','cer_score', 'content'] ]
 
     output_contents['file_name'] = output_contents['file_name'].str.extract('^([^_]*)')
 
     output_contents['content'] = output_contents['content'].str.replace('\n', ' ').str.replace('\r', ' ').str.replace('- ', '')
 
     output_contents['result'] = output_contents['content'].str[:200]
-    output_contents.loc[output_contents['file_name']=='EWJ', ['model', 'result']]
+    output_contents.loc[:, ['model', 'result']]
     return (output_contents,)
-
-
-@app.cell
-def _(output_contents):
-    output_contents.loc[output_contents['file_name']!='EWJ', ['model', 'result']]
-    return
 
 
 @app.cell
@@ -391,7 +400,7 @@ def _(output_contents):
     from tabulate import tabulate
 
     # Get the specific rows you want
-    _table_data = output_contents.loc[output_contents['file_name']!='EWJ', ['model','cer_score', 'result']].round(2)
+    _table_data = output_contents.loc[:, ['model','cer_score', 'result']].round(2).sort_values('cer_score')
 
     # Create the LaTeX table manually
     _latex_table = (
@@ -420,31 +429,14 @@ def _(output_contents):
 
 
 @app.cell
-def _(output_contents):
-    # Get the specific rows you want
-    _table_data = output_contents.loc[output_contents['file_name']!='EWJ', ['model','cer_score', 'result']].round(2)
+def _(results_df):
+    results_df.loc[results_df['model']=='pixtral'].sort_values('cer_score')
+    return
 
-    # Create the LaTeX table manually
-    _latex_table = (
-        r'\begin{table}[h]' + '\n' +
-        r'\small' + '\n' +
-        r'\begin{tabular}{p{3cm}p{2cm}p{12cm}}' + '\n' +
-        r'\hline' + '\n' +
-        r'Model & CER & Result \\' + '\n' +
-        r'\hline' + '\n'
-    )
 
-    # Add each row manually
-    for _, _row in _table_data.iterrows():
-        _latex_table += f"{_row['model']} & {_row['cer_score']} & {_row['result']} \\\\\n"
-
-    _latex_table += (
-        r'\hline' + '\n' +
-        r'\end{tabular}' + '\n' +
-        r'\end{table}'
-    )
-
-    print(_latex_table)
+@app.cell
+def _(results_df):
+    results_df.groupby('model')['no_error'].sum()*100/len(results_df['file_name'].unique())
     return
 
 

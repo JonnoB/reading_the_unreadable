@@ -307,7 +307,7 @@ def _(
 
     results_df['cer_score'] = results_df.apply(lambda x: cer(x['GT'], x['content']), axis=1)
 
-    results_df['no_error'] = results_df['cer_score']==0 
+    results_df['no_error'] = results_df['cer_score']==0
     return (results_df,)
 
 
@@ -352,9 +352,7 @@ def _(mo):
         The paper will then show the image and the CER Scores and the supplementary material will show the full texts
 
 
-        This is a very interesting image, because there is a scratch through it 'NS2_1843-04-01_page_4_B0C5R42'. GOT and tesseract do very well even outperforming Pixtral, however, it would be confusing to show this as it doesn't represent overall performance. As such I will use 'NS2_1843-04-01_page_4_B0C1R1' as this is pretty close to the mean for all and at least in the correct order. 
-
-
+        This is a very interesting image, because there is a scratch through it 'NS2_1843-04-01_page_4_B0C5R42'. GOT and tesseract do very well even outperforming Pixtral, however, it would be confusing to show this as it doesn't represent overall performance. As such I will use 'NS2_1843-04-01_page_4_B0C1R1' as this is pretty close to the mean for all and at least in the correct order.
         """
     )
     return
@@ -371,7 +369,6 @@ def _(results_df):
 
 
     results_df2.loc[(results_df2['model']=='pixtral') & (results_df2['rank']==1) & (~results_df2['folder'].str.contains('BLN')) & (results_df2['cer_score']<0.08)].sort_values('diff_score')
-
     return (results_df2,)
 
 

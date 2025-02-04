@@ -9,6 +9,7 @@ These functions are generally to do with the analysis and evaluation code
 import os
 import pandas as pd
 import re
+import numpy as np
 
 
 
@@ -167,7 +168,7 @@ def clean_text(text):
     return text.strip()
 
 
-def is_title(text):
+def is_title(series):
     """
     Determines if a string meets specific title criteria.
 
@@ -178,103 +179,56 @@ def is_title(text):
        - Contains at least 2 vowels (A, E, I, O, U)
 
     Args:
-        text (str): The input string to be checked
-
+        series (pd.Series): Series of strings to check
+        
     Returns:
-        bool: True if the text meets all title criteria, False otherwise
-
-    Examples:
-        >>> is_title("HELLO WORLD")
-        True  # "HELLOWORLD" has 5+ letters and 3 vowels
-        >>> is_title("HI")
-        False  # Too short and not enough vowels
-        >>> is_title("Hello WORLD")
-        False  # Not all uppercase
+        pd.Series: Boolean mask indicating which strings meet title criteria
     """
-    # Function to check if a string meets title criteria
-    vowels = set('AEIOU')
-
-    # Check if the text is all uppercase
-    if not text.upper() == text:
-        return False
-
-    # Split by any character that's not a letter or space
-    word_groups = re.split(r'[^A-Z\s]', text)
-
-    # For each continuous group of words
-    for group in word_groups:
-        # Remove spaces and check if this group meets criteria
-        letters_only = group.replace(' ', '')
-        if len(letters_only) >= 5:  # Check length
-            vowel_count = sum(1 for c in letters_only if c in vowels)
-            if vowel_count >= 2:  # Check vowels
-                return True
-    return False
+    # Check if all uppercase
+    is_upper_mask = series == series.str.upper()
+    
+    # Remove non-letters and spaces
+    letters_only = series.str.replace(r'[^A-Z]', '', regex=True)
+    
+    # Check length condition
+    length_mask = letters_only.str.len() >= 5
+    
+    # Count vowels
+    vowel_counts = letters_only.str.count('[AEIOU]')
+    vowel_mask = vowel_counts >= 2
+    
+    return is_upper_mask & length_mask & vowel_mask
 
 def split_and_reclassify(bbox_df):
     """
-    Splits text content into paragraphs and reclassifies them based on specific criteria.
-
-    This function processes a DataFrame containing bounding box information and text content.
-    It splits the text content into paragraphs (based on double newlines), assigns order numbers,
-    and potentially reclassifies paragraphs as titles based on their content.
-
+    splitting and reclassifying text content.
+    
     Parameters:
     -----------
     bbox_df : pandas.DataFrame
-        Input DataFrame containing at least the following columns:
-        - 'content': str, the text content to be split
-        - 'class': str, the original classification of the text
-
+        Input DataFrame containing 'content' and 'class' columns
+        
     Returns:
     --------
     pandas.DataFrame
-        A new DataFrame with the following modifications:
-        - Split paragraphs as separate rows
-        - Added 'class2' column with potentially updated classifications
-        - Added 'sub_order' column indicating the order of paragraphs
-        - All original columns are preserved
-        - Index is reset
-
-    Notes:
-    ------
-    - Paragraphs are determined by double newline characters ('\n\n')
-    - Empty paragraphs are skipped
-    - If text contains only one paragraph, 'class2' will be same as original 'class'
-    - For multiple paragraphs, each is evaluated using is_title() function to determine
-      if it should be classified as a title
-
+        Processed DataFrame with split paragraphs and classifications
     """
-
-    new_rows = []
-
-    for idx, row in bbox_df.iterrows():
-        text = row['content']
-        paragraphs = text.split('\n\n')
-
-        if len(paragraphs) == 1:
-            row['class2'] = row['class']
-            row['sub_order'] = 1
-            new_rows.append(row)
-        else:
-            for i, para in enumerate(paragraphs, 1):
-                if para.strip():  # Skip empty paragraphs
-                    new_row = row.copy()
-                    new_row['content'] = para.strip()
-                    new_row['sub_order'] = i
-
-                    # Check each paragraph against the new title criteria
-                    if is_title(para.strip()):
-                        new_row['class2'] = 'title'
-                    else:
-                        new_row['class2'] = row['class']
-
-                    new_rows.append(new_row)
-
-    # Create new dataframe from the processed rows
-    new_df = pd.DataFrame(new_rows).reset_index(drop=True)
-
-    return new_df
+    # Chain operations efficiently
+    split_rows = (bbox_df
+                 .assign(content=lambda x: x['content'].str.split('\n\n'))
+                 .explode('content')
+                 .assign(content=lambda x: x['content'].str.strip())
+                 .query('content != ""'))
+    
+    # Add sub_order efficiently
+    split_rows['sub_order'] = split_rows.groupby(split_rows.index).cumcount() + 1
+    
+    # Use vectorized title checking
+    split_rows['class2'] = np.where(is_title(split_rows['content']),
+                                  'title',
+                                  split_rows['class'])
+    
+    return split_rows.reset_index(drop=True)
 
 
 def merge_consecutive_titles(df):
@@ -314,64 +268,57 @@ def merge_consecutive_titles(df):
     - Merged content is joined with newline characters
     - The index is reset in the returned DataFrame
     """    
-    # Create a copy to avoid modifying the original dataframe
-    result_df = df.copy()
-
-    # Initialize list to store indices to drop
-    indices_to_drop = []
-
-    # Initialize variables to track current merge group
-    current_content = []
-    current_start_idx = None
-
-    # Iterate through rows
-    for i in range(len(result_df)):
-        current_row = result_df.iloc[i]
-
-        # If we're not at the last row, get next row for comparison
-        if i < len(result_df) - 1:
-            next_row = result_df.iloc[i + 1]
-
-            # Check if current and next rows should be merged
-            should_merge = (
-                current_row['class2'] == 'title' and
-                next_row['class2'] == 'title' and
-                current_row['page_id'] == next_row['page_id'] and
-                current_row['box_page_id'] == next_row['box_page_id'] and
-                current_row['sub_order'] + 1 == next_row['sub_order']
-            )
-
-            if should_merge:
-                # Start new merge group if not already started
-                if current_start_idx is None:
-                    current_start_idx = i
-                    current_content = [current_row['content']]
-
-                current_content.append(next_row['content'])
-                indices_to_drop.append(i + 1)
-
-            elif current_start_idx is not None:
-                # Merge the accumulated content into the first row
-                merged_content = '\n'.join(current_content)
-                result_df.at[current_start_idx, 'content'] = merged_content
-
-                # Reset tracking variables
-                current_content = []
-                current_start_idx = None
-
-        elif current_start_idx is not None:
-            # Handle the last merge group if exists
-            merged_content = '\n'.join(current_content)
-            result_df.at[current_start_idx, 'content'] = merged_content
-
-    # Drop the merged rows using boolean indexing instead of index labels
-    if indices_to_drop:
-        result_df = result_df[~result_df.index.isin(indices_to_drop)]
-
-    # Reset index
+    if len(df) == 0:
+        return df.copy()
+    
+    # Convert to numpy arrays for faster operations
+    is_title = (df['class2'] == 'title').values
+    page_ids = df['page_id'].values
+    box_page_ids = df['box_page_id'].values
+    sub_orders = df['sub_order'].values
+    
+    # Create masks for consecutive matches using numpy operations
+    consecutive_mask = np.zeros(len(df), dtype=bool)
+    consecutive_mask[:-1] = (
+        is_title[:-1] & 
+        is_title[1:] & 
+        (page_ids[:-1] == page_ids[1:]) &
+        (box_page_ids[:-1] == box_page_ids[1:]) &
+        (sub_orders[:-1] + 1 == sub_orders[1:])
+    )
+    
+    # Early return if no consecutive titles found
+    if not consecutive_mask.any():
+        return df.copy()
+    
+    # Create groups for consecutive titles
+    merge_groups = (~consecutive_mask).cumsum()
+    
+    # Create DataFrame with group information
+    merge_df = pd.DataFrame({
+        'content': df['content'],
+        'merge_group': merge_groups,
+        'keep': ~np.append(consecutive_mask[1:], False)
+    })
+    
+    # Create result DataFrame first
+    result_df = df[merge_df['keep']].copy()
+    
+    # Store original merge groups for kept rows
+    kept_groups = merge_df[merge_df['keep']]['merge_group'].values
+    
+    # Merge content efficiently using pandas aggregation
+    merged_contents = (merge_df
+                      .groupby('merge_group')['content']
+                      .agg('\n'.join)
+                      .reindex(kept_groups)
+                      .values)
+    
+    # Update content in result_df efficiently
+    result_df['content'] = merged_contents
+    
+    # Reset index and recalculate sub_order
     result_df = result_df.reset_index(drop=True)
-
-    # Recalculate sub_order within each box_page_id group
     result_df['sub_order'] = result_df.groupby(['page_id', 'box_page_id']).cumcount() + 1
-
+    
     return result_df

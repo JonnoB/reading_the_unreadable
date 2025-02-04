@@ -21,6 +21,11 @@ from PIL import Image
 from io import BytesIO
 import requests
 
+import numpy as np
+import concurrent
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing
+
 
 def convert_returned_streaming_to_dataframe(response, id=None, custom_id=None):
     """
@@ -1021,6 +1026,10 @@ def convert_returned_json_to_dataframe(json_data):
 
 
 def parse_filename(filename):
+
+    """ 
+    This function is obselete as decompose filenames has been re-factored to be vectorised over dataframes
+    """
     # Split by '_page_' first to get issue_id
     issue_id, rest = filename.split('_page_')
 
@@ -1053,29 +1062,47 @@ def parse_filename(filename):
         'segment': segment
     }
 
-# Assuming your dataframe has a column named 'filename'
+
 def decompose_filenames(df):
-
-    """ 
-    Separates the custom id back into issue, page number, block, column, reading_order, and segment.
     """
-    # Apply the parsing function to each filename
-    parsed = df['custom_id'].apply(parse_filename)
+    Decompose the 'custom_id' column in the DataFrame into its constituent parts.
+    Made more robust for parallel processing.
+    """
+    # Split custom_id into components
+    parts = df['custom_id'].str.split('_page_', expand=True)
+    issue_id = parts[0]
 
-    # Convert the series of dictionaries to a dataframe
-    parsed_df = pd.DataFrame(parsed.tolist())
+    rest_parts = parts[1].str.split('_', expand=True)
 
-    # Combine with original dataframe
-    return pd.concat([df, parsed_df], axis=1)
+    # Extract position info more safely
+    position_info = rest_parts[2]
+    block = position_info.str.extract(r'B(\d+)').astype(int)
+    column = position_info.str.extract(r'C(\d+)').astype(int)
+    reading_order = position_info.str.extract(r'R(\d+)').astype(int)
+
+    # Create new columns without squeeze
+    new_cols = pd.DataFrame({
+        'issue_id': issue_id,
+        'page_number': rest_parts[0].astype(int),
+        'class': rest_parts[1],
+        'block': block.iloc[:, 0],  # Use iloc instead of squeeze
+        'column': column.iloc[:, 0],
+        'reading_order': reading_order.iloc[:, 0],
+        'segment': rest_parts[4].astype(int)
+    }, index=df.index)
+
+    # Combine with original DataFrame
+    return pd.concat([df, new_cols], axis=1)
 
 
+"""
 def reassemble_issue_segments(jsonl_path):
-    """ 
+    "" 
     This function takes the path to a json file returned from the mistral server and reconstructs it into 
     a meaningful dataframe. It does this by converting the json itself into a dataframe,
     then extracting the bounding box and segment information for each element of the json
     then merging all the segments into a single peice of text.
-    """
+    ""
 
     with open(jsonl_path, 'r') as file:
         json_data = json.load(file)  # Use load instead of loads
@@ -1086,6 +1113,83 @@ def reassemble_issue_segments(jsonl_path):
     df = combine_article_segments(df)
 
     return df
+"""
+def reassemble_issue_segments(jsonl_path):
+    """
+    Process a single JSON file and return a DataFrame.
+    """
+    try:
+        # Load and process JSON
+        with open(jsonl_path, 'r') as file:
+            json_data = json.load(file)
+        
+        # Create initial DataFrame
+        df = convert_returned_json_to_dataframe(json_data)
+        if df.empty:
+            print(f"Empty DataFrame after initial conversion: {jsonl_path}")
+            return pd.DataFrame()
+            
+        # Process filenames
+        df = decompose_filenames(df)
+        if df.empty:
+            print(f"Empty DataFrame after filename decomposition: {jsonl_path}")
+            return pd.DataFrame()
+            
+        # Combine segments
+        df = combine_article_segments(df)
+        if df.empty:
+            print(f"Empty DataFrame after combining segments: {jsonl_path}")
+            return pd.DataFrame()
+            
+        return df
+        
+    except Exception as e:
+        print(f"Error processing {jsonl_path}: {str(e)}")
+        return pd.DataFrame()
+
+
+
+def process_json_files(json_folder, output_path, num_workers=None):
+    """
+    Process JSON files in parallel and save as single parquet file.
+    
+    Parameters:
+    -----------
+    json_folder : str
+        Path to folder containing JSON files
+    output_path : str
+        Path where the output parquet file should be saved
+    num_workers : int, optional
+        Number of worker processes to use. If None, uses (CPU count - 1)
+    """
+    if num_workers is None:
+        num_workers = max(1, multiprocessing.cpu_count() - 1)
+    
+    # Get list of JSON files
+    json_files = [
+        os.path.join(json_folder, f) 
+        for f in os.listdir(json_folder)
+        if f.endswith(('.json', '.jsonl'))
+    ]
+    
+    print(f"Processing {len(json_files)} files using {num_workers} workers")
+    
+    # Process files in parallel with progress bar
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        dfs = list(tqdm(
+            executor.map(reassemble_issue_segments, json_files),
+            total=len(json_files),
+            desc="Processing JSON files"
+        ))
+    
+    print("Combining results...")
+    final_df = pd.concat(dfs, ignore_index=True)
+    
+    print(f"Saving to {output_path}")
+    final_df.to_parquet(output_path, index=False)
+    
+    print(f"Completed. Final DataFrame shape: {final_df.shape}")
+    return final_df
 
 
 def delete_all_batch_files(client, api_key, limit=100):

@@ -665,7 +665,7 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
     
     return "\n".join(jsonl_lines)
 
-def create_batch_job(client, base_filename, encoded_images, prompt_dict, job_type='testing'):
+def create_batch_job(client, base_filename, encoded_images, prompt_dict, model = "pixtral-12b-2409", job_type='testing'):
     """
     Create a batch job and return job details including original filename information.
     Assumes only a single issue is being batched
@@ -701,7 +701,7 @@ def create_batch_job(client, base_filename, encoded_images, prompt_dict, job_typ
     # Create the job with metadata including the target filename
     created_job = client.batch.jobs.create(
         input_files=[batch_data.id],
-        model="pixtral-12b-2409",
+        model=model,
         endpoint="/v1/chat/completions",
         metadata={
             "job_type": job_type,
@@ -713,7 +713,7 @@ def create_batch_job(client, base_filename, encoded_images, prompt_dict, job_typ
 
 
 def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_file='data/processed_jobs.csv', 
-                           deskew = True, crop_image= True, max_ratio = 1):
+                           deskew = True, crop_image= True, max_ratio = 1, model = "pixtral-12b-2409"):
     """
     Process periodical issues one at a time, creating batch jobs for OCR processing
     
@@ -777,7 +777,8 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
                 client, 
                 issue_id, 
                 encoded_images, 
-                prompt_dict
+                prompt_dict,
+                model = model,
             )
             
             # Add results to DataFrame

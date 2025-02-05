@@ -285,7 +285,7 @@ def _(
     results_folder,
 ):
     results_df = []
-
+    print(os.listdir(results_folder))
     for _folder in os.listdir(results_folder):
 
 
@@ -339,6 +339,35 @@ def _(dataframe_to_latex_with_bold_extreme, reshape_metrics, results_df):
 def _(reshape_metrics, results_df):
     reshape_metrics(results_df,  spread_col='dataset', agg_func='std', round_digits=2)
     return
+
+
+@app.cell
+def _(plt, results_df, sns):
+    pivot_df = results_df.loc[results_df['model'].isin(['pixtral', 'pixtral_large']) ].pivot(
+        index='file_name',
+        columns='model',
+        values='cer_score'
+    )
+
+    # Create the scatterplot
+    sns.scatterplot(data=pivot_df, x='pixtral', y='pixtral_large')
+    plt.show()
+    pivot_df.describe()
+    return (pivot_df,)
+
+
+@app.cell
+def _(pivot_df):
+    thresholds = [10, 1, 0.2, 0.1, 0.01]
+
+    for threshold in thresholds:
+        pixtral_fraction = (pivot_df['pixtral'] < threshold).mean()
+        pixtral_large_fraction = (pivot_df['pixtral_large'] < threshold).mean()
+        
+        print(f"\nThreshold {threshold}:")
+        print(f"Pixtral: {pixtral_fraction:.3%} below threshold")
+        print(f"Pixtral Large: {pixtral_large_fraction:.3%} below threshold")
+    return pixtral_fraction, pixtral_large_fraction, threshold, thresholds
 
 
 @app.cell

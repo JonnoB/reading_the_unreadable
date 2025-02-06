@@ -5,11 +5,6 @@ app = marimo.App(width="medium")
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(mo):
     mo.md(
         r"""
@@ -144,7 +139,7 @@ def _(create_dataset):
     # Save dataset to Hugging Face format
     final_dataset['train'].save_to_disk("dataset/train")
     final_dataset['validation'].save_to_disk("dataset/validation")
-    final_dataset['test'].save_to_disk("dataset/test")
+    #final_dataset['test'].save_to_disk("dataset/test")
 
     # Print some statistics
     print(f"Total samples: {len(dataset)}")

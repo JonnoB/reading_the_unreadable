@@ -9,12 +9,19 @@ def _():
     import pandas as pd
     from pathlib import Path
     from function_modules.bbox_functions import plot_boxes_on_image
-    from function_modules.analysis_functions import is_title, split_and_reclassify, merge_consecutive_titles
+    from function_modules.analysis_functions import is_title, split_and_reclassify, merge_consecutive_titles, remove_line_breaks
     import os 
     from tqdm import tqdm
     import numpy as np 
     import time
+    import seaborn as sns
+    import matplotlib.pyplot as plt
+    import cv2
 
+    import pandas as pd
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from tqdm import tqdm
+    from typing import List
 
     image_path = os.environ['image_folder']
 
@@ -48,10 +55,14 @@ def _():
     bboxes_df = [pd.read_parquet(os.path.join(bbox_path, _file_path)) for _file_path in os.listdir(bbox_path)] 
     bboxes_df = pd.concat(bboxes_df, ignore_index=True)
     return (
+        List,
         Path,
+        ProcessPoolExecutor,
         all_data_files,
+        as_completed,
         bbox_path,
         bboxes_df,
+        cv2,
         data,
         data_path,
         image_path,
@@ -63,8 +74,11 @@ def _():
         pd,
         periodical_mapping,
         plot_boxes_on_image,
+        plt,
         raw_bbox_path,
         raw_bboxes_df,
+        remove_line_breaks,
+        sns,
         split_and_reclassify,
         time,
         tqdm,
@@ -99,16 +113,15 @@ def _(test2):
 @app.cell
 def _(
     bboxes_df,
+    cv2,
     np,
     os,
     path_mapping,
     periodical_mapping,
+    plt,
     raw_bboxes_df,
     test2,
 ):
-    import matplotlib.pyplot as plt
-    import cv2
-
     def plot_boxes_on_image2(df, image_path, figsize=(15,15), show_reading_order=False, fill_boxes=True, fill_alpha=0.2):
         """
         Plot bounding boxes and their classifications on a page image with optional reading order visualization.
@@ -310,14 +323,12 @@ def _(
     return (
         combined_image,
         combined_image_folder,
-        cv2,
         fig1,
         fig2,
         image1,
         image2,
         pad_to_match_height,
         plot_boxes_on_image2,
-        plt,
         trim_white_space,
     )
 
@@ -342,116 +353,250 @@ def _(bboxes_df, os, periodical_mapping, plot_boxes_on_image, plt):
 
 
 @app.cell
-def _(raw_bboxes_df, test2):
-    raw_bboxes_df[raw_bboxes_df['filename'].isin(test2['filename'].unique())].groupby('class').size()
-    return
-
-
-@app.cell
-def _(bboxes_df, test2):
-    bboxes_df[bboxes_df['page_id'].isin(test2['page_id'].unique())].groupby('class').size()
-    return
-
-
-@app.cell
-def _(mo):
-    mo.md(
-        r"""
-        # Split boxes where a line is entirely in caps
-
-        It seems pretty common for a line that is entirely in caps to be a title. This means I can make a heuristic whereby a box of class 'text' is split if the line is all caps, the all caps lines are classed as "title" and all consecutive title rows are merged together
+def _(
+    List,
+    ProcessPoolExecutor,
+    as_completed,
+    merge_consecutive_titles,
+    pd,
+    split_and_reclassify,
+    tqdm,
+):
+    def create_articles(df):
         """
+        Merges consecutive rows in a DataFrame, combining titles with their subsequent text.
+        Creates a new 'title' column containing the title text while also including it in the main content.
+
+        Parameters:
+        -----------
+        df : pandas.DataFrame
+            Input DataFrame containing required columns:
+            - 'class', 'page_id', 'reading_order', 'sub_order', 'content', 'issue_id'
+
+        Returns:
+        --------
+        pandas.DataFrame
+            A new DataFrame with merged content, titles integrated into content, and a new 'title' column.
+        """    
+        if len(df) == 0:
+            return df.copy()
+
+        # Create a working copy of the DataFrame
+        working_df = df.copy()
+
+        # Sort the DataFrame
+        working_df = working_df.sort_values(['page_id', 'reading_order', 'sub_order']).reset_index(drop=True)
+
+        # Initialize merge groups and titles
+        current_group = 0
+        merge_groups = []
+        group_titles = {}
+        current_title = None
+
+        # Iterate through rows to create proper merge groups
+        for i in range(len(working_df)):
+            curr_row = working_df.iloc[i]
+
+            if i == 0:
+                if curr_row['class'] == 'title':
+                    current_title = curr_row['content']
+                merge_groups.append(current_group)
+                continue
+
+            prev_row = working_df.iloc[i-1]
+
+            # Start new group if issue_ids don't match
+            if prev_row['issue_id'] != curr_row['issue_id']:
+                current_group += 1
+                current_title = None
+
+            # Update current title if we encounter a title
+            if curr_row['class'] == 'title':
+                current_group += 1
+                current_title = curr_row['content']
+
+            merge_groups.append(current_group)
+            if current_title is not None:
+                group_titles[current_group] = current_title
+
+        working_df['merge_group'] = merge_groups
+
+        # Process groups and create new DataFrame
+        result_rows = []
+
+        for group in working_df['merge_group'].unique():
+            group_df = working_df[working_df['merge_group'] == group]
+
+            # Get the title for this group
+            group_title = group_titles.get(group, None)
+
+            # If group contains multiple rows or has a title
+            if len(group_df) >= 1:
+                # Get the first non-title row of the group
+                first_row = group_df[group_df['class'] != 'title'].iloc[0] if any(group_df['class'] != 'title') else group_df.iloc[0]
+
+                # Collect all content (excluding title rows)
+                content_parts = []
+                if group_title:
+                    content_parts.append(group_title)
+                content_parts.extend(group_df[group_df['class'] != 'title']['content'].tolist())
+
+                # Merge the content
+                merged_content = '\n\n'.join(content_parts)
+
+                # Create new row
+                new_row = first_row.copy()
+                new_row['content'] = merged_content
+                new_row['title'] = group_title  # Add title column
+                new_row['class'] = 'content'    # Set class to content
+                result_rows.append(new_row)
+
+        # Create new DataFrame from the Series objects
+        result_df = pd.DataFrame([row.to_dict() for row in result_rows])
+
+        # Reset index and recalculate reading_order
+        result_df = result_df.sort_values(['reading_order', 'sub_order'])
+        result_df['reading_order'] = result_df.groupby('page_id').cumcount() + 1
+
+        # Drop the merge_group column
+        result_df = result_df.drop('merge_group', axis=1)
+
+        return result_df.reset_index(drop=True)
+
+
+
+    def process_document_batch(df_batch: pd.DataFrame) -> pd.DataFrame:
+        """
+        Process a single batch (subset) of the DataFrame through all three functions.
+
+        Parameters:
+        -----------
+        df_batch : pd.DataFrame
+            A subset of the main DataFrame containing documents from a single issue.
+
+        Returns:
+        --------
+        pd.DataFrame
+            Processed DataFrame batch.
+        """
+        # Apply the three functions in sequence
+        df_batch = split_and_reclassify(df_batch)
+        df_batch = merge_consecutive_titles(df_batch)
+        df_batch = create_articles(df_batch)
+        return df_batch
+
+    def process_batch(df: pd.DataFrame, issue_ids: List[int]) -> pd.DataFrame:
+        """
+        Process a batch of issue_ids.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            The entire DataFrame.
+        issue_ids : List[int]
+            List of issue_ids to process.
+
+        Returns:
+        --------
+        pd.DataFrame
+            Processed DataFrame batch.
+        """
+        batch_df = df[df['issue_id'].isin(issue_ids)].copy()
+        return process_document_batch(batch_df)
+
+    def process_documents(df: pd.DataFrame, batch_size: int = 100, parallel: bool = False, n_jobs: int = -1) -> pd.DataFrame:
+        """
+        Process the entire DataFrame in batches by issue_id, with option for parallel processing.
+
+        Parameters:
+        -----------
+        df : pd.DataFrame
+            Input DataFrame containing documents.
+        batch_size : int
+            Number of unique issue_ids to process in each batch.
+        parallel : bool
+            Whether to use parallel processing.
+        n_jobs : int
+            Number of parallel jobs to run (-1 for all available cores).
+
+        Returns:
+        --------
+        pd.DataFrame
+            Processed DataFrame with all transformations applied.
+        """
+        # Get unique issue_ids
+        unique_issues = df['issue_id'].unique()
+
+        # Create batches of issue_ids
+        issue_batches = [unique_issues[i:i + batch_size] for i in range(0, len(unique_issues), batch_size)]
+
+        processed_dfs = []
+
+        if parallel:
+            # Process batches in parallel
+            with ProcessPoolExecutor(max_workers=n_jobs if n_jobs != -1 else None) as executor:
+                futures = [executor.submit(process_batch, df, batch) for batch in issue_batches]
+                for future in tqdm(as_completed(futures), total=len(futures), desc="Processing batches"):
+                    processed_dfs.append(future.result())
+        else:
+            # Process batches sequentially
+            for batch in tqdm(issue_batches, desc="Processing batches"):
+                processed_batch = process_batch(df, batch)
+                processed_dfs.append(processed_batch)
+
+        # Combine all processed batches
+        final_df = pd.concat(processed_dfs, ignore_index=True)
+
+        # Sort the final DataFrame
+        final_df = final_df.sort_values(['issue_id', 'page_id', 'reading_order', 'sub_order'])
+
+        return final_df.reset_index(drop=True)
+
+    # Parallel processing
+    # df_processed = process_documents(returned_docs, batch_size=100, parallel=True, n_jobs=-1)
+    return (
+        create_articles,
+        process_batch,
+        process_document_batch,
+        process_documents,
     )
-    return
 
 
 @app.cell
-def _(bboxes_df, test2):
-    bboxes_df[bboxes_df['filename'].isin(test2['filename'].unique())]
-    return
+def _(
+    create_articles,
+    merge_consecutive_titles,
+    os,
+    pd,
+    remove_line_breaks,
+    split_and_reclassify,
+):
+    returned_docs_folder = 'data/download_jobs/ncse/dataframes/raw'
+
+
+    #returned_docs = pd.concat([pd.read_parquet(os.path.join(returned_docs_folder, x)) for x in #os.listdir(returned_docs_folder)])
+
+    returned_docs = pd.read_parquet(os.path.join(returned_docs_folder, 'Leader_issue_PDF_files.parquet'))
+    returned_docs['content'] = returned_docs['content'].str.strip('`').str.replace('tsv', '', n=1)
+    # Add the condition to change 'class' to 'text'
+    returned_docs.loc[(returned_docs['completion_tokens'] > 50) & (returned_docs['class'] == 'title'), 'class'] = 'text'
+    returned_docs.loc[returned_docs['class'] != 'table', 'content'] = remove_line_breaks(returned_docs.loc[returned_docs['class'] != 'table', 'content'])
+
+
+    returned_docs2 = returned_docs.loc[returned_docs['issue_id']=='CLD-1860-10-06']
+    # text boxes are split and the split boxes re-classified if some are in fact titles
+    df = split_and_reclassify(returned_docs2)
+    # The consecctive titles are merged
+    df = merge_consecutive_titles(df)
+    # The all consectutive non-titles are merged to form articles
+    df = create_articles(df)
+    return df, returned_docs, returned_docs2, returned_docs_folder
 
 
 @app.cell
-def _(is_title):
-    # Usage:
-    # First run the split_and_reclassify function
-    # df_split = split_and_reclassify(bbox_df)
-    # Then merge the consecutive titles and recalculate sub_order
-    # df_final = merge_consecutive_titles(df_split)
-
-    # Test cases
-    test_texts = [
-        "THE STAR",              # Should be title
-        "SIR",                   # Should not be title (too short)
-        "---",                   # Should not be title
-        "...",                   # Should not be title
-        "N.I.A.B.P",            # Should not be title (broken by periods)
-        "BREAKING NEWS",         # Should be title
-        "HELLO WORLD",          # Should be title
-        "THE END.",             # Should be title (ignoring period)
-        "A.B HELLO WORLD C.D",  # Should be title (HELLO WORLD meets criteria)
-        "NYNTH"         # Should not be title (not enough vowels)
-    ]
-
-    # Test the function
-    for text in test_texts:
-        print(f"{text}: {'Is title' if is_title(text) else 'Not title'}")
-    return test_texts, text
-
-
-@app.cell
-def _(pd, split_and_reclassify):
-    test_set_df = pd.read_csv('data/download_jobs/experiments/dataframe/NCSE_deskew_True_max_ratio_1.csv')
-    #test_set_df['class'] = 'text'
-
-    temp = split_and_reclassify(test_set_df)
-    return temp, test_set_df
-
-
-@app.cell
-def _(merge_consecutive_titles, temp):
-
-
-    temp2 = merge_consecutive_titles(temp)
-    return (temp2,)
-
-
-@app.cell
-def _(temp2):
-    temp2
-    return
-
-
-@app.cell
-def _(temp):
-    temp[['class', 'class2', 'sub_order', 'content']]
-    return
-
-
-@app.cell
-def _(temp2):
-    temp2[['class', 'class2', 'sub_order', 'content']]
-    return
-
-
-@app.cell
-def _(os, pd, split_and_reclassify):
-    returned_docs_folder = 'data/download_jobs/ncse/dataframes'
-
-
-    returned_docs = pd.concat([pd.read_parquet(os.path.join(returned_docs_folder, x)) for x in os.listdir(returned_docs_folder)])
-
-
-    #test_set_df['class'] = 'text'
-
-    temp3 = split_and_reclassify(returned_docs)
-    return returned_docs, returned_docs_folder, temp3
-
-
-@app.cell
-def _(merge_consecutive_titles, temp3):
-    temp4 = merge_consecutive_titles(temp3)
-    return (temp4,)
+def _(process_documents, returned_docs):
+    test = process_documents(returned_docs, batch_size = 1, parallel= True, n_jobs = 3)
+    return (test,)
 
 
 @app.cell
@@ -461,9 +606,49 @@ def _(returned_docs):
 
 
 @app.cell
-def _(returned_docs):
-    returned_docs['total_tokens'].sum()/59000
+def _(temp5):
+    temp5.sort_values(['page_number','reading_order'  ])[['page_number', 'reading_order', 'class', 'content', 'title']]
     return
+
+
+@app.cell
+def _(temp5):
+    temp5.groupby('class').size()
+    return
+
+
+@app.cell
+def _(os, pd, periodical_mapping, sns):
+    returned_docs_folder2 = 'data/download_jobs/ncse/dataframes/raw'
+
+
+    # Get all parquet files in the folder
+    parquet_files = [f for f in os.listdir(returned_docs_folder2) if f.endswith('.parquet')]
+
+    # List to store individual dataframes
+    dataframes = []
+
+    # Read all parquet files and store dataframes
+    for file in parquet_files:
+        _df = pd.read_parquet(os.path.join(returned_docs_folder2, file))
+        _df['content'] = _df['content'].str.strip('`').str.replace('tsv', '', n=1)
+        _df['periodical'] = _df['issue_id'].str.split('-').str[0]
+        _df = _df.drop(columns = 'content')
+        dataframes.append(_df)
+
+    # Concatenate all dataframes into a single dataframe
+    _combined_df = pd.concat(dataframes, ignore_index=True).merge(periodical_mapping, on='periodical', how='left')
+
+    sns.displot(
+        data=_combined_df.loc[(_combined_df['completion_tokens']<100) & (_combined_df['class']=='title')],
+        x='completion_tokens',
+        col='periodical_code',
+        col_wrap=3,  # Adjust based on the number of unique periodicals
+        kind='kde',
+        height=4,
+        aspect=1.5
+    )
+    return dataframes, file, parquet_files, returned_docs_folder2
 
 
 @app.cell
@@ -474,377 +659,8 @@ def _(returned_docs):
 
 @app.cell
 def _():
-    (20121/1e6)*0.15
-    return
-
-
-@app.cell
-def _(is_title, np, pd, time):
-    def split_and_reclassify2(bbox_df):
-        """
-        Splits text content into paragraphs and reclassifies them based on specific criteria.
-
-        This function processes a DataFrame containing bounding box information and text content.
-        It splits the text content into paragraphs (based on double newlines), assigns order numbers,
-        and potentially reclassifies paragraphs as titles based on their content.
-
-        Parameters:
-        -----------
-        bbox_df : pandas.DataFrame
-            Input DataFrame containing at least the following columns:
-            - 'content': str, the text content to be split
-            - 'class': str, the original classification of the text
-
-        Returns:
-        --------
-        pandas.DataFrame
-            A new DataFrame with the following modifications:
-            - Split paragraphs as separate rows
-            - Added 'class2' column with potentially updated classifications
-            - Added 'sub_order' column indicating the order of paragraphs
-            - All original columns are preserved
-            - Index is reset
-
-        Notes:
-        ------
-        - Paragraphs are determined by double newline characters ('\n\n')
-        - Empty paragraphs are skipped
-        - If text contains only one paragraph, 'class2' will be same as original 'class'
-        - For multiple paragraphs, each is evaluated using is_title() function to determine
-          if it should be classified as a title
-
-        """
-
-        # Split the content into paragraphs and create a new DataFrame
-        split_rows = bbox_df.assign(content=bbox_df['content'].str.split('\n\n')).explode('content')
-
-        # Remove empty paragraphs
-        split_rows = split_rows[split_rows['content'].str.strip() != '']
-
-        # Add sub_order column
-        split_rows['sub_order'] = split_rows.groupby(split_rows.index).cumcount() + 1
-
-        # Apply the is_title function to determine class2
-        split_rows['class2'] = split_rows.apply(lambda row: 'title' if is_title(row['content'].strip()) else row['class'], axis=1)
-
-        # Reset index
-        split_rows = split_rows.reset_index(drop=True)
-
-        return split_rows
-
-
-
-    def split_and_reclassify_optimized(bbox_df):
-        """
-        Optimized version of split_and_reclassify function.
-        """
-        # Create a copy of the DataFrame to avoid modifying the original
-        df = bbox_df.copy()
-
-        # Create lists to store the expanded data
-        contents = []
-        sub_orders = []
-        class2 = []
-        repeat_indices = []
-
-        # Process each row once
-        for idx, content in enumerate(df['content']):
-            paragraphs = [p.strip() for p in content.split('\n\n') if p.strip()]
-
-            if len(paragraphs) == 1:
-                contents.append(paragraphs[0])
-                sub_orders.append(1)
-                class2.append(df.iloc[idx]['class'])
-                repeat_indices.append(idx)
-            else:
-                contents.extend(paragraphs)
-                sub_orders.extend(range(1, len(paragraphs) + 1))
-                class2.extend(['title' if is_title(p) else df.iloc[idx]['class'] 
-                             for p in paragraphs])
-                repeat_indices.extend([idx] * len(paragraphs))
-
-        # Create new DataFrame efficiently
-        new_df = df.iloc[repeat_indices].copy()
-        new_df['content'] = contents
-        new_df['sub_order'] = sub_orders
-        new_df['class2'] = class2
-
-        return new_df.reset_index(drop=True)
-
-
-
-    def create_test_data(n_rows):
-        return pd.DataFrame({
-            'content': [f"Para 1\n\nPara 2\n\nPara 3" * np.random.randint(1, 4) for _ in range(n_rows)],
-            'class': ['class1'] * n_rows
-        })
-
-    def benchmark_comparison(n_rows=500000):
-        test_df = create_test_data(n_rows)
-
-        # Benchmark pandas-centric approach
-        start = time.time()
-        result1 = split_and_reclassify2(test_df)
-        time1 = time.time() - start
-
-        # Benchmark list-based approach
-        start = time.time()
-        result2 = split_and_reclassify_optimized(test_df)
-        time2 = time.time() - start
-
-        print(f"Pandas-centric approach: {time1:.2f} seconds")
-        print(f"List-based approach: {time2:.2f} seconds")
-
-        # Verify results are equivalent
-        print("\nResults equivalent:", result1.equals(result2))
-
-    # Run benchmark
-    benchmark_comparison()
-    return (
-        benchmark_comparison,
-        create_test_data,
-        split_and_reclassify2,
-        split_and_reclassify_optimized,
-    )
-
-
-@app.cell
-def _(
-    create_test_data,
-    is_title,
-    np,
-    pd,
-    split_and_reclassify2,
-    split_and_reclassify_optimized,
-    time,
-):
-    def split_and_reclassify_optimized_v2(bbox_df):
-        # Perform all string operations in one go
-        split_rows = (bbox_df
-                     .assign(content=lambda x: x['content'].str.split('\n\n'))
-                     .explode('content')
-                     .assign(content=lambda x: x['content'].str.strip())
-                     .query('content != ""'))
-
-        # Add sub_order efficiently
-        split_rows['sub_order'] = split_rows.groupby(split_rows.index).cumcount() + 1
-
-        # Vectorize the is_title check if possible
-        # This depends on your is_title implementation
-        if hasattr(pd.Series, 'str.istitle'):  # If is_title is just checking istitle()
-            split_rows['class2'] = np.where(split_rows['content'].str.istitle(),
-                                          'title',
-                                          split_rows['class'])
-        else:
-            # Fall back to apply if we need custom is_title logic
-            split_rows['class2'] = split_rows.apply(
-                lambda row: 'title' if is_title(row['content']) else row['class'],
-                axis=1
-            )
-
-        return split_rows.reset_index(drop=True)
-
-    def split_and_reclassify_optimized_v3(bbox_df):
-        # Pre-allocate the DataFrame with estimated size
-        estimated_size = (bbox_df['content'].str.count('\n\n') + 1).sum()
-
-        # Split and explode in one operation
-        split_rows = pd.concat([
-            bbox_df.assign(
-                content=lambda x: x['content'].str.split('\n\n'),
-                _split_idx=lambda x: x.index
-            ).explode('content')
-        ])
-
-        # In-place operations where possible
-        split_rows.loc[:, 'content'] = split_rows['content'].str.strip()
-        split_rows = split_rows[split_rows['content'] != '']
-
-        # Efficient sub_order calculation
-        split_rows.loc[:, 'sub_order'] = split_rows.groupby('_split_idx').cumcount() + 1
-
-        # Vectorized class2 assignment
-        if hasattr(pd.Series, 'str.istitle'):
-            split_rows.loc[:, 'class2'] = np.where(
-                split_rows['content'].str.istitle(),
-                'title',
-                split_rows['class']
-            )
-        else:
-            split_rows.loc[:, 'class2'] = split_rows.apply(
-                lambda row: 'title' if is_title(row['content']) else row['class'],
-                axis=1
-            )
-
-        # Clean up and return
-        return split_rows.drop('_split_idx', axis=1).reset_index(drop=True)
-
-
-    def benchmark_all_versions(n_rows=200000):
-        test_df = create_test_data(n_rows)
-
-        versions = {
-            'Original Pandas': split_and_reclassify2,
-            'List-based': split_and_reclassify_optimized,
-            'Optimized Pandas v2': split_and_reclassify_optimized_v2,
-            'Optimized Pandas v3': split_and_reclassify_optimized_v3
-        }
-
-        results = {}
-        for name, func in versions.items():
-            start = time.time()
-            result = func(test_df)
-            duration = time.time() - start
-            results[name] = {'time': duration, 'result': result}
-            print(f"{name}: {duration:.2f} seconds")
-
-        # Verify all results are equivalent
-        first_result = next(iter(results.values()))['result']
-        for name, res in results.items():
-            if name != list(results.keys())[0]:
-                print(f"\n{name} equivalent to original: {first_result.equals(res['result'])}")
-
-    benchmark_all_versions()
-    return (
-        benchmark_all_versions,
-        split_and_reclassify_optimized_v2,
-        split_and_reclassify_optimized_v3,
-    )
-
-
-@app.cell
-def _(create_test_data, np, re, split_and_reclassify2, time):
-    def is_title_vectorized(series):
-        """
-        Vectorized version of is_title function for pandas Series.
-        """
-        # Check if all uppercase
-        is_upper_mask = series == series.str.upper()
-
-        # Create the regex pattern for splitting
-        pattern = r'[^A-Z\s]'
-
-        # Function to check a single group of words
-        def check_group(group):
-            letters_only = group.replace(' ', '')
-            if len(letters_only) >= 5:
-                vowel_count = sum(1 for c in letters_only if c in 'AEIOU')
-                return vowel_count >= 2
-            return False
-
-        # Vectorized function to process each text
-        def process_text(text):
-            if not isinstance(text, str):
-                return False
-            if not text == text.upper():
-                return False
-            word_groups = re.split(pattern, text)
-            return any(check_group(group) for group in word_groups)
-
-        # Use numpy vectorize for better performance
-        vectorized_process = np.vectorize(process_text)
-
-        return vectorized_process(series)
-
-    def split_and_reclassify_final(bbox_df):
-        """
-        Optimized version with vectorized title checking.
-        """
-        # Chain operations efficiently
-        split_rows = (bbox_df
-                     .assign(content=lambda x: x['content'].str.split('\n\n'))
-                     .explode('content')
-                     .assign(content=lambda x: x['content'].str.strip())
-                     .query('content != ""'))
-
-        # Add sub_order efficiently
-        split_rows['sub_order'] = split_rows.groupby(split_rows.index).cumcount() + 1
-
-        # Vectorized class2 assignment with optimized title checking
-        split_rows['class2'] = np.where(is_title_vectorized(split_rows['content']),
-                                      'title',
-                                      split_rows['class'])
-
-        return split_rows.reset_index(drop=True)
-
-
-    def is_title_vectorized_v2(series):
-        """
-        Alternative vectorized approach using more pandas string methods.
-        """
-        # Check if all uppercase
-        is_upper_mask = series == series.str.upper()
-
-        # Remove non-letters and spaces
-        letters_only = series.str.replace(r'[^A-Z]', '', regex=True)
-
-        # Check length condition
-        length_mask = letters_only.str.len() >= 5
-
-        # Count vowels
-        vowel_counts = letters_only.str.count('[AEIOU]')
-        vowel_mask = vowel_counts >= 2
-
-        return is_upper_mask & length_mask & vowel_mask
-
-    def split_and_reclassify_final_v2(bbox_df):
-        """
-        Version with alternative vectorized title checking.
-        """
-        split_rows = (bbox_df
-                     .assign(content=lambda x: x['content'].str.split('\n\n'))
-                     .explode('content')
-                     .assign(content=lambda x: x['content'].str.strip())
-                     .query('content != ""'))
-
-        split_rows['sub_order'] = split_rows.groupby(split_rows.index).cumcount() + 1
-
-        # Use alternative vectorized title checking
-        split_rows['class2'] = np.where(is_title_vectorized_v2(split_rows['content']),
-                                      'title',
-                                      split_rows['class'])
-
-        return split_rows.reset_index(drop=True)
-
-    def benchmark_final_versions(n_rows=200000):
-        test_df = create_test_data(n_rows)
-
-        versions = {
-            'Original': split_and_reclassify2,
-            'Vectorized v1': split_and_reclassify_final,
-            'Vectorized v2': split_and_reclassify_final_v2
-        }
-
-        results = {}
-        for name, func in versions.items():
-            start = time.time()
-            result = func(test_df)
-            duration = time.time() - start
-            results[name] = {'time': duration, 'result': result}
-            print(f"{name}: {duration:.2f} seconds")
-
-        # Verify results are equivalent
-        first_result = next(iter(results.values()))['result']
-        for name, res in results.items():
-            if name != list(results.keys())[0]:
-                print(f"\n{name} equivalent to original: {first_result.equals(res['result'])}")
-
-    benchmark_final_versions()
-    return (
-        benchmark_final_versions,
-        is_title_vectorized,
-        is_title_vectorized_v2,
-        split_and_reclassify_final,
-        split_and_reclassify_final_v2,
-    )
-
-
-app._unparsable_cell(
-    r"""
-    (import marimo as mo
-    """,
-    name="_"
-)
+    import marimo as mo
+    return (mo,)
 
 
 if __name__ == "__main__":

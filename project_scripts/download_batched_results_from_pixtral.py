@@ -31,7 +31,7 @@ dataframe_folder = os.path.join(download_jobs_folder, 'dataframes')
 os.makedirs(dataframe_folder, exist_ok=True)
 
 # Process each file
-for file in tqdm(os.listdir(processed_jobs_folder), desc="Processing periodicals"):
+for file in tqdm([os.listdir(processed_jobs_folder)[4]], desc="Processing periodicals"):
     print(f"\nProcessing {file}")
     
     # Setup paths for this file
@@ -60,14 +60,14 @@ for file in tqdm(os.listdir(processed_jobs_folder), desc="Processing periodicals
         )
 
         # Convert the JSONs to a dataframe using parallel processing
-        print(f"Converting JSONs to dataframe for {file}")
-        df = process_json_files(
-            json_folder=json_folder,
-            output_path=output_parquet,
-            num_workers=None  # Will use CPU count - 1
-        )
+        # print(f"Converting JSONs to dataframe for {file}")
+        # df = process_json_files(
+        #     json_folder=json_folder,
+        #     output_path=output_parquet,
+        #     num_workers=None  # Will use CPU count - 1
+        # )
         
-        print(f"Successfully processed {file}. DataFrame shape: {df.shape}")
+        # print(f"Successfully processed {file}. DataFrame shape: {df.shape}")
         
     except Exception as e:
         print(f"Error processing {file}: {str(e)}")

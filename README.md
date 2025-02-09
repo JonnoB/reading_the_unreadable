@@ -1,9 +1,14 @@
+# This project is currently underdevelopment... probably best not to use
+
 # Ereading the unreadable
 This repository is to convert scanned images of 19th century newspapers into an indexed and classified data collection.
 
 This project is an evolution of [CLOCR-C](https://github.com/JonnoB/clocrc), [ScrambledText](https://github.com/JonnoB/scrambledtext_analysis), and the hackathon project [Archivstral](https://github.com/JonnoB/archivestal). It is an attempt to re-frame OCR as an Language Model tast, as well as provide, a substantial new searchable data collection of 19th century English Newspapers
 
-## This project is currently underdevelopment... probably best not to use
+## Abstract
+
+
+xxxxxxxxxx
 
 # Using this Code Repository
 
@@ -28,33 +33,30 @@ If you are using the scripts which work with the original NCSE images ensure the
 
 Each element of the project pipeline has a python script for execution. However, there is no single end-to-end script. 
 
-# To Do
-- Create Articles
-- Classify Articles
-- Create simple end-to-end non-batch example on Lightning
+# Folders
 
-# Key Modules
-
-- bbox_functions.py: Post processes bounding boxes to improve quality and consistency
-- send_to_lm_functions.py: Prepares image files for sending to the LM and retrieving information from the LM
-- analysis_functions.py: Support functions for the analysis script
+- function_modules: Project python library
+- project_scripts: The main scripts for re-producing the project, see folder for separate README
+- lightning_code: scripts and ipynb code requiring GPU and run on the lightning platform. See folder for separate README
 
 # Key files
-
-- convert_all_ncse.py: Turns the NCSE PDF's into a single page PNG files at the specified DPI
-- transfer_files_to_lightning.py: Move image files to lightning.ai, this is simply for convenient use of GPU
-- post_process_images.py: post process the image bounding boxes produced by DocLayout-yolo
-- send_processed_issues_to_pixtral_as_batch.py: Used to send data with post-processed bounding boxes to Pixtral as a batch job
-- download_batched_results_from_pixtral.py: Retrieve the batched results using the previously generated log file
-- experiment_deskew_and_ratio_batch_send.py: Send the deskew and cropping experiment to the batch server
-- experiment_deskew_and_ratio_batch_download.py: Retrieve the deskew and cropping experiment to the batch server
-- analysis.py: The script/marimo notebook used to analyze results for the paper. Produces the tables plots etc.
-- send_to_pixel_streaming.py: An example of realtime sending to the Pixtral server
+- classification_and_data_analysis.py: used to create the silver datasets for training the ModernBERT classifiers. Also analyses the performance of the models. Model training scripts can be found in the lightning_code folder.
+- result_section.py: The code used to generate the most of results section of the paper. Produces the tables plots etc.
+- send_to_pixel_streaming.py: An example of realtime sending to the Pixtral server.
+- comparative_analysis.py: Performance the use case comparative analysis of the periodical data in NCSE V2.0
 
 The scripts and ipynb to measure the performance of the alternative models can be found in the "alternative_models" folder
 
-
-
+# To Do
+- Create simple end-to-end non-batch example on Lightning
 
 # Note
 - The code is written in a mixture of marimo .py files and .ipynb files. This is becuase although marimo is preferred for it's ease of reporducibility, the GPU acitivity was performed on lightning.ai which is focused on .ipynb based code.
+
+
+# Citing this project
+
+If you use this project or the code used to generate it, please cite
+
+
+_______No citation information available yet_________

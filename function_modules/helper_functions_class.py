@@ -84,7 +84,7 @@ def create_iptc_prompt(article_text):
             13: 'society',
             14: 'sport',
             15: 'conflict, war and peace',
-            16: 'weather'
+            16: 'weather',
             17: 'N/A'
         }}
     You will respond using a JSON format.

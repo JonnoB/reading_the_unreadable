@@ -3,6 +3,7 @@ __pycache__/
 
 #Nothing from the data file
 
+scrapbook.ipynb
 llvm.sh
 data/*
 archived/*

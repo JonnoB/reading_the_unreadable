@@ -4,9 +4,9 @@ setup.py
 function_modules/__init__.py
 function_modules/analysis_functions.py
 function_modules/bbox_functions.py
-function_modules/helper_functions.py
 function_modules/helper_functions_class.py
 function_modules/send_to_lm_functions.py
+function_modules/util_funcs.py
 my_package.egg-info/PKG-INFO
 my_package.egg-info/SOURCES.txt
 my_package.egg-info/dependency_links.txt

@@ -1,24 +1,27 @@
-pyarrow #will soon become a required dependency of pandas. really useful as you can save large dataframes as .parquet files which are
-#much smaller than csv files and much faster to load, I have seen about 10x in both size and speed.
 pandas
 numpy
+tqdm
+opencv-python
 matplotlib
+numba
+wand
+Pillow
+requests
+pdf2image
+gliner
 seaborn
-openai
-tiktoken
-evaluate
-jiwer
-python-dotenv
-jellyfish
 scikit-learn
-pyPDF2
+scipy
+textstat
+datasets
 mistralai
-tenacity
+python-dotenv
+jiwer
+pyarrow
+transformers
+torch
+pytesseract
+huggingface-hub
+doclayout-yolo
 litellm
-markdown-it-py[plugins]
-mdit-plain
-cleanlab
-lightning_sdk
-transformers 
-marimo
-nervaluate #for evaluating the NER
+tenacity

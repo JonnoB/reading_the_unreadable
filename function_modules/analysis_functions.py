@@ -1,5 +1,4 @@
-
-""" 
+"""
 
 These functions are generally to do with the analysis and evaluation code
 
@@ -15,12 +14,11 @@ from tqdm import tqdm
 from typing import List
 
 
-
 def load_txt_files_to_dataframe(folder_path, text_column_name):
     """
     Loads all .txt files from a specified folder into a pandas DataFrame.
     This is an internal function used by `load_and_join_texts_as_dataframe` which is used in
-    calculating the cer for various models, and `files_to_df_func`, which is used as part of 
+    calculating the cer for various models, and `files_to_df_func`, which is used as part of
     the general organising of data... they could possibly be merged at some point.
 
     Args:
@@ -35,8 +33,8 @@ def load_txt_files_to_dataframe(folder_path, text_column_name):
     Note:
         Files are read using UTF-8 encoding
     """
-    #Get list of .txt files
-    txt_files = [f for f in os.listdir(folder_path) if f.endswith('.txt')]
+    # Get list of .txt files
+    txt_files = [f for f in os.listdir(folder_path) if f.endswith(".txt")]
 
     # Initialize lists to store data
     file_names = []
@@ -45,7 +43,7 @@ def load_txt_files_to_dataframe(folder_path, text_column_name):
     # Read each file
     for file in txt_files:
         file_path = os.path.join(folder_path, file)
-        with open(file_path, 'r', encoding='utf-8') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
 
         # Append data to lists
@@ -53,18 +51,22 @@ def load_txt_files_to_dataframe(folder_path, text_column_name):
         file_contents.append(content)
 
     # Create DataFrame
-    df = pd.DataFrame({
-        'file_name': file_names,
-        text_column_name: file_contents
-    })
+    df = pd.DataFrame({"file_name": file_names, text_column_name: file_contents})
 
     return df
 
-def reshape_metrics(df, metric_col='cer_score', group_col='model', spread_col='dataset', 
-                   agg_func='mean', round_digits=3):
+
+def reshape_metrics(
+    df,
+    metric_col="cer_score",
+    group_col="model",
+    spread_col="dataset",
+    agg_func="mean",
+    round_digits=3,
+):
     """
     Reshapes a dataframe by spreading the dataset column and calculating aggregated metrics.
-    
+
     Parameters:
     -----------
     df : pandas.DataFrame
@@ -79,28 +81,24 @@ def reshape_metrics(df, metric_col='cer_score', group_col='model', spread_col='d
         Any valid pandas aggregation function
     round_digits : int, default=3
         Number of decimal places to round to
-        
+
     Returns:
     --------
     pandas.DataFrame
         Reshaped dataframe with datasets as columns and aggregated metrics
     """
-    
+
     try:
         result = df.pivot_table(
-            values=metric_col,
-            index=group_col,
-            columns=spread_col,
-            aggfunc=agg_func
+            values=metric_col, index=group_col, columns=spread_col, aggfunc=agg_func
         ).round(round_digits)
         return result
-        
+
     except (ValueError, TypeError) as e:
         raise ValueError(f"'{agg_func}' is not a valid aggregation function: {str(e)}")
-    
 
 
-def highlight_extreme(data, extreme='min', model_column=None):
+def highlight_extreme(data, extreme="min", model_column=None):
     """
     Highlight the minimum or maximum value in each column with LaTeX bold formatting.
     Exclude the model_column from the extreme value calculation.
@@ -117,58 +115,62 @@ def highlight_extreme(data, extreme='min', model_column=None):
     for col in data.columns:
         if col == model_column:
             continue
-        if extreme == 'min':
+        if extreme == "min":
             extreme_val = data[col].min()
-        elif extreme == 'max':
+        elif extreme == "max":
             extreme_val = data[col].max()
         else:
             raise ValueError("extreme must be 'min' or 'max'")
 
-        df_copy.loc[data[col] == extreme_val, col] = f'\\textbf{{{extreme_val}}}'
+        df_copy.loc[data[col] == extreme_val, col] = f"\\textbf{{{extreme_val}}}"
 
     return df_copy
 
-def dataframe_to_latex_with_bold_extreme(df, extreme='min', model_column=None, caption='', label=''):
 
-    """ 
+def dataframe_to_latex_with_bold_extreme(
+    df, extreme="min", model_column=None, caption="", label=""
+):
+    """
     A simple function to output correctly formatted tables
     """
     # Highlight the extreme values
     styled_df = highlight_extreme(df, extreme=extreme, model_column=model_column)
 
     # Convert to LaTeX with float formatting, caption, and label
-    latex_table = styled_df.to_latex(index=False, escape=False, float_format="%.2f", caption=caption, label=label)
+    latex_table = styled_df.to_latex(
+        index=False, escape=False, float_format="%.2f", caption=caption, label=label
+    )
 
     return latex_table
 
 
 def clean_text(text):
-
     """
     Clean the text so that all paragraphs are a single line, but keep paragraphs.
-    
+
     """
     # Function to clean and format text
-    
+
     # Replace hyphenated line breaks with temporary marker
-    text = re.sub(r'-\n', 'HYPHENBREAK', text)
-    
+    text = re.sub(r"-\n", "HYPHENBREAK", text)
+
     # Replace double line breaks with a marker
-    text = re.sub(r'\n\n+', 'DOUBLEPAGEBREAK', text)
-    
+    text = re.sub(r"\n\n+", "DOUBLEPAGEBREAK", text)
+
     # Remove single line breaks
-    text = re.sub(r'\n', ' ', text)
-    
+    text = re.sub(r"\n", " ", text)
+
     # Restore hyphenated words (removing the hyphen)
-    text = text.replace('HYPHENBREAK', '')
-    
+    text = text.replace("HYPHENBREAK", "")
+
     # Restore double line breaks
-    text = text.replace('DOUBLEPAGEBREAK', '\n\n')
-    
+    text = text.replace("DOUBLEPAGEBREAK", "\n\n")
+
     # Clean up extra spaces
-    text = re.sub(r' +', ' ', text)
-    
+    text = re.sub(r" +", " ", text)
+
     return text.strip()
+
 
 def remove_line_breaks(series):
     """
@@ -177,18 +179,18 @@ def remove_line_breaks(series):
     """
     # Make a copy to avoid SettingWithCopyWarning
     series = series.copy()
-    
+
     # Apply all transformations using vectorized string operations
-    series = series.str.replace(r'-\n', 'HYPHENBREAK', regex=True)
-    series = series.str.replace(r'\n\n+', 'DOUBLEPAGEBREAK', regex=True)
-    series = series.str.replace(r'\n', ' ', regex=True)
-    series = series.str.replace('HYPHENBREAK', '')
-    series = series.str.replace('DOUBLEPAGEBREAK', '\n\n')
-    series = series.str.replace(r' +', ' ', regex=True)
-    
+    series = series.str.replace(r"-\n", "HYPHENBREAK", regex=True)
+    series = series.str.replace(r"\n\n+", "DOUBLEPAGEBREAK", regex=True)
+    series = series.str.replace(r"\n", " ", regex=True)
+    series = series.str.replace("HYPHENBREAK", "")
+    series = series.str.replace("DOUBLEPAGEBREAK", "\n\n")
+    series = series.str.replace(r" +", " ", regex=True)
+
     # Strip whitespace
     series = series.str.strip()
-    
+
     return series
 
 
@@ -204,58 +206,61 @@ def is_title(series):
 
     Args:
         series (pd.Series): Series of strings to check
-        
+
     Returns:
         pd.Series: Boolean mask indicating which strings meet title criteria
     """
     # Check if all uppercase
     is_upper_mask = series == series.str.upper()
-    
+
     # Remove non-letters and spaces
-    letters_only = series.str.replace(r'[^A-Z]', '', regex=True)
-    
+    letters_only = series.str.replace(r"[^A-Z]", "", regex=True)
+
     # Check length condition
     length_mask = letters_only.str.len() >= 5
-    
+
     # Count vowels
-    vowel_counts = letters_only.str.count('[AEIOU]')
+    vowel_counts = letters_only.str.count("[AEIOU]")
     vowel_mask = vowel_counts >= 2
-    
+
     return is_upper_mask & length_mask & vowel_mask
+
 
 def split_and_reclassify(df):
     """
     splitting and reclassifying text content.
-    
+
     Parameters:
     -----------
     df : pandas.DataFrame
         Input DataFrame containing 'content' and 'class' columns
-        
+
     Returns:
     --------
     pandas.DataFrame
         Processed DataFrame with split paragraphs and classifications
     """
     # Rename 'class' to 'original_class' before processing
-    df = df.rename(columns={'class': 'original_class'})
-    
+    df = df.rename(columns={"class": "original_class"})
+
     # Chain operations efficiently
-    split_rows = (df
-                 .assign(content=lambda x: x['content'].str.split('\n\n'))
-                 .explode('content')
-                 .assign(content=lambda x: x['content'].str.strip())
-                 .query('content != ""'))
-    
+    split_rows = (
+        df.assign(content=lambda x: x["content"].str.split("\n\n"))
+        .explode("content")
+        .assign(content=lambda x: x["content"].str.strip())
+        .query('content != ""')
+    )
+
     # Add sub_order efficiently
-    split_rows['sub_order'] = split_rows.groupby(split_rows.index).cumcount() + 1
-    
+    split_rows["sub_order"] = split_rows.groupby(split_rows.index).cumcount() + 1
+
     # Use vectorized title checking
-    split_rows['class'] = np.where(is_title(split_rows['content']),
-                                  'title',
-                                  split_rows['original_class'])
-    
+    split_rows["class"] = np.where(
+        is_title(split_rows["content"]), "title", split_rows["original_class"]
+    )
+
     return split_rows.reset_index(drop=True)
+
 
 def merge_consecutive_titles(df):
     """
@@ -265,7 +270,7 @@ def merge_consecutive_titles(df):
     - Both rows have 'class' value of 'title'
     - Both rows share the same 'page_id' and 'box_page_id'
     - The 'sub_order' values are consecutive
-    
+
     The content of merged rows is combined using newline characters.
     After merging, the sub_order values are recalculated within each page_id and box_page_id group.
 
@@ -293,67 +298,73 @@ def merge_consecutive_titles(df):
     - The function creates a copy of the input DataFrame to preserve the original
     - Merged content is joined with newline characters
     - The index is reset in the returned DataFrame
-    """    
+    """
     if len(df) == 0:
         return df.copy()
-    
+
     # Convert to numpy arrays for faster operations
-    is_title = (df['class'] == 'title').values
-    page_ids = df['page_id'].values
-    box_page_ids = df['box_page_id'].values
-    sub_orders = df['sub_order'].values
-    
+    is_title = (df["class"] == "title").values
+    page_ids = df["page_id"].values
+    box_page_ids = df["box_page_id"].values
+    sub_orders = df["sub_order"].values
+
     # Create masks for consecutive matches using numpy operations
     consecutive_mask = np.zeros(len(df), dtype=bool)
     consecutive_mask[:-1] = (
-        is_title[:-1] & 
-        is_title[1:] & 
-        (page_ids[:-1] == page_ids[1:]) &
-        (box_page_ids[:-1] == box_page_ids[1:]) &
-        (sub_orders[:-1] + 1 == sub_orders[1:])
+        is_title[:-1]
+        & is_title[1:]
+        & (page_ids[:-1] == page_ids[1:])
+        & (box_page_ids[:-1] == box_page_ids[1:])
+        & (sub_orders[:-1] + 1 == sub_orders[1:])
     )
-    
+
     # Early return if no consecutive titles found
     if not consecutive_mask.any():
         return df.copy()
-    
+
     # Create groups for consecutive titles
     merge_groups = (~consecutive_mask).cumsum()
-    
+
     # Create DataFrame with group information
-    merge_df = pd.DataFrame({
-        'content': df['content'],
-        'merge_group': merge_groups,
-        'keep': ~np.append(consecutive_mask[1:], False)
-    })
-    
+    merge_df = pd.DataFrame(
+        {
+            "content": df["content"],
+            "merge_group": merge_groups,
+            "keep": ~np.append(consecutive_mask[1:], False),
+        }
+    )
+
     # Create result DataFrame first
-    result_df = df[merge_df['keep']].copy()
-    
+    result_df = df[merge_df["keep"]].copy()
+
     # Store original merge groups for kept rows
-    kept_groups = merge_df[merge_df['keep']]['merge_group'].values
-    
+    kept_groups = merge_df[merge_df["keep"]]["merge_group"].values
+
     # Merge content efficiently using pandas aggregation
-    merged_contents = (merge_df
-                      .groupby('merge_group')['content']
-                      .agg('\n'.join)
-                      .reindex(kept_groups)
-                      .values)
-    
+    merged_contents = (
+        merge_df.groupby("merge_group")["content"]
+        .agg("\n".join)
+        .reindex(kept_groups)
+        .values
+    )
+
     # Update content in result_df efficiently
-    result_df['content'] = merged_contents
-    
+    result_df["content"] = merged_contents
+
     # Reset index and recalculate sub_order
     result_df = result_df.reset_index(drop=True)
-    result_df['sub_order'] = result_df.groupby(['page_id', 'box_page_id']).cumcount() + 1
-    
+    result_df["sub_order"] = (
+        result_df.groupby(["page_id", "box_page_id"]).cumcount() + 1
+    )
+
     # Sort by reading_order and sub_order within each page_id group
-    result_df = result_df.sort_values(['reading_order', 'sub_order'])
-    
+    result_df = result_df.sort_values(["reading_order", "sub_order"])
+
     # Recalculate reading_order sequentially
-    result_df['reading_order'] = result_df.groupby('page_id').cumcount() + 1
-    
+    result_df["reading_order"] = result_df.groupby("page_id").cumcount() + 1
+
     return result_df.reset_index(drop=True)
+
 
 def create_articles(df):
     """
@@ -370,7 +381,7 @@ def create_articles(df):
     --------
     pandas.DataFrame
         A new DataFrame with merged content, titles integrated into content, and a new 'title' column.
-    """    
+    """
     if len(df) == 0:
         return df.copy()
 
@@ -378,7 +389,9 @@ def create_articles(df):
     working_df = df.copy()
 
     # Sort the DataFrame
-    working_df = working_df.sort_values(['page_id', 'reading_order', 'sub_order']).reset_index(drop=True)
+    working_df = working_df.sort_values(
+        ["page_id", "reading_order", "sub_order"]
+    ).reset_index(drop=True)
 
     # Initialize merge groups and titles
     current_group = 0
@@ -391,34 +404,34 @@ def create_articles(df):
         curr_row = working_df.iloc[i]
 
         if i == 0:
-            if curr_row['class'] == 'title':
-                current_title = curr_row['content']
+            if curr_row["class"] == "title":
+                current_title = curr_row["content"]
             merge_groups.append(current_group)
             continue
 
-        prev_row = working_df.iloc[i-1]
+        prev_row = working_df.iloc[i - 1]
 
         # Start new group if issue_ids don't match
-        if prev_row['issue_id'] != curr_row['issue_id']:
+        if prev_row["issue_id"] != curr_row["issue_id"]:
             current_group += 1
             current_title = None
 
         # Update current title if we encounter a title
-        if curr_row['class'] == 'title':
+        if curr_row["class"] == "title":
             current_group += 1
-            current_title = curr_row['content']
+            current_title = curr_row["content"]
 
         merge_groups.append(current_group)
         if current_title is not None:
             group_titles[current_group] = current_title
 
-    working_df['merge_group'] = merge_groups
+    working_df["merge_group"] = merge_groups
 
     # Process groups and create new DataFrame
     result_rows = []
 
-    for group in working_df['merge_group'].unique():
-        group_df = working_df[working_df['merge_group'] == group]
+    for group in working_df["merge_group"].unique():
+        group_df = working_df[working_df["merge_group"] == group]
 
         # Get the title for this group
         group_title = group_titles.get(group, None)
@@ -426,36 +439,41 @@ def create_articles(df):
         # If group contains multiple rows or has a title
         if len(group_df) >= 1:
             # Get the first non-title row of the group
-            first_row = group_df[group_df['class'] != 'title'].iloc[0] if any(group_df['class'] != 'title') else group_df.iloc[0]
+            first_row = (
+                group_df[group_df["class"] != "title"].iloc[0]
+                if any(group_df["class"] != "title")
+                else group_df.iloc[0]
+            )
 
             # Collect all content (excluding title rows)
             content_parts = []
             if group_title:
                 content_parts.append(group_title)
-            content_parts.extend(group_df[group_df['class'] != 'title']['content'].tolist())
+            content_parts.extend(
+                group_df[group_df["class"] != "title"]["content"].tolist()
+            )
 
             # Merge the content
-            merged_content = '\n\n'.join(content_parts)
+            merged_content = "\n\n".join(content_parts)
 
             # Create new row
             new_row = first_row.copy()
-            new_row['content'] = merged_content
-            new_row['title'] = group_title  # Add title column
-            new_row['class'] = 'content'    # Set class to content
+            new_row["content"] = merged_content
+            new_row["title"] = group_title  # Add title column
+            new_row["class"] = "content"  # Set class to content
             result_rows.append(new_row)
 
     # Create new DataFrame from the Series objects
     result_df = pd.DataFrame([row.to_dict() for row in result_rows])
 
     # Reset index and recalculate reading_order
-    result_df = result_df.sort_values(['reading_order', 'sub_order'])
-    result_df['reading_order'] = result_df.groupby('page_id').cumcount() + 1
+    result_df = result_df.sort_values(["reading_order", "sub_order"])
+    result_df["reading_order"] = result_df.groupby("page_id").cumcount() + 1
 
     # Drop the merge_group column
-    result_df = result_df.drop('merge_group', axis=1)
+    result_df = result_df.drop("merge_group", axis=1)
 
     return result_df.reset_index(drop=True)
-
 
 
 def process_document_batch(df_batch: pd.DataFrame) -> pd.DataFrame:
@@ -478,6 +496,7 @@ def process_document_batch(df_batch: pd.DataFrame) -> pd.DataFrame:
     df_batch = create_articles(df_batch)
     return df_batch
 
+
 def process_batch(df: pd.DataFrame, issue_ids: List[int]) -> pd.DataFrame:
     """
     Process a batch of issue_ids.
@@ -494,10 +513,13 @@ def process_batch(df: pd.DataFrame, issue_ids: List[int]) -> pd.DataFrame:
     pd.DataFrame
         Processed DataFrame batch.
     """
-    batch_df = df[df['issue_id'].isin(issue_ids)].copy()
+    batch_df = df[df["issue_id"].isin(issue_ids)].copy()
     return process_document_batch(batch_df)
 
-def process_documents(df: pd.DataFrame, batch_size: int = 100, parallel: bool = False, n_jobs: int = -1) -> pd.DataFrame:
+
+def process_documents(
+    df: pd.DataFrame, batch_size: int = 100, parallel: bool = False, n_jobs: int = -1
+) -> pd.DataFrame:
     """
     Process the entire DataFrame in batches by issue_id, with option for parallel processing.
 
@@ -518,18 +540,27 @@ def process_documents(df: pd.DataFrame, batch_size: int = 100, parallel: bool = 
         Processed DataFrame with all transformations applied.
     """
     # Get unique issue_ids
-    unique_issues = df['issue_id'].unique()
+    unique_issues = df["issue_id"].unique()
 
     # Create batches of issue_ids
-    issue_batches = [unique_issues[i:i + batch_size] for i in range(0, len(unique_issues), batch_size)]
+    issue_batches = [
+        unique_issues[i : i + batch_size]
+        for i in range(0, len(unique_issues), batch_size)
+    ]
 
     processed_dfs = []
 
     if parallel:
         # Process batches in parallel
-        with ProcessPoolExecutor(max_workers=n_jobs if n_jobs != -1 else None) as executor:
-            futures = [executor.submit(process_batch, df, batch) for batch in issue_batches]
-            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing batches"):
+        with ProcessPoolExecutor(
+            max_workers=n_jobs if n_jobs != -1 else None
+        ) as executor:
+            futures = [
+                executor.submit(process_batch, df, batch) for batch in issue_batches
+            ]
+            for future in tqdm(
+                as_completed(futures), total=len(futures), desc="Processing batches"
+            ):
                 processed_dfs.append(future.result())
     else:
         # Process batches sequentially
@@ -541,6 +572,8 @@ def process_documents(df: pd.DataFrame, batch_size: int = 100, parallel: bool = 
     final_df = pd.concat(processed_dfs, ignore_index=True)
 
     # Sort the final DataFrame
-    final_df = final_df.sort_values(['issue_id', 'page_id', 'reading_order', 'sub_order'])
+    final_df = final_df.sort_values(
+        ["issue_id", "page_id", "reading_order", "sub_order"]
+    )
 
     return final_df.reset_index(drop=True)

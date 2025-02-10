@@ -1,11 +1,12 @@
-""" 
+"""
 This module contains the functions which take bounding box information and the images and sends them to the LLM, and retrives the data
 This module contains a mixture of image manipulation and LLM api functions.
 """
+
 import os
 import pandas as pd
-import datetime 
-import time 
+import datetime
+import time
 from tqdm import tqdm
 import cv2
 
@@ -21,8 +22,6 @@ from PIL import Image
 from io import BytesIO
 import requests
 
-import numpy as np
-import concurrent
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
 
@@ -31,20 +30,23 @@ def convert_returned_streaming_to_dataframe(response, id=None, custom_id=None):
     """
     Process a single API response and return it in DataFrame format
     """
-    extracted_data = [{
-        'id': id,
-        'custom_id': custom_id,
-        'prompt_tokens': response.usage.prompt_tokens,
-        'completion_tokens': response.usage.completion_tokens,
-        'total_tokens': response.usage.total_tokens,
-        'finish_reason': response.choices[0].finish_reason,
-        'content': response.choices[0].message.content
-    }]
+    extracted_data = [
+        {
+            "id": id,
+            "custom_id": custom_id,
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens,
+            "finish_reason": response.choices[0].finish_reason,
+            "content": response.choices[0].message.content,
+        }
+    ]
 
     return pd.DataFrame(extracted_data)
 
+
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def process_image_with_api(image_base64, prompt,  model="mistral/pixtral-12b-2409"):
+def process_image_with_api(image_base64, prompt, model="mistral/pixtral-12b-2409"):
     """
     Process an image using an AI model API to extract information based on a given prompt.
 
@@ -78,17 +80,14 @@ def process_image_with_api(image_base64, prompt,  model="mistral/pixtral-12b-240
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "text",
-                            "text": prompt
-                        },
+                        {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
-                            "image_url": f"data:image/jpeg;base64,{image_base64}"
-                        }
-                    ]
+                            "image_url": f"data:image/jpeg;base64,{image_base64}",
+                        },
+                    ],
                 }
-            ]
+            ],
         )
 
         return response
@@ -96,7 +95,6 @@ def process_image_with_api(image_base64, prompt,  model="mistral/pixtral-12b-240
     except Exception as e:
         print(f"An error occurred in process_image_with_api: {str(e)}")
         raise  # Re-raise the exception to trigger a retry
-
 
 
 def knit_strings(s1: str, s2: str) -> str:
@@ -122,17 +120,17 @@ def knit_strings(s1: str, s2: str) -> str:
     # match.b: start index of match in s2
     # match.size: length of the match
     match = matcher.find_longest_match(0, len(s1), 0, len(s2))
-    
+
     # If no match is found (match.size == 0), simply concatenate the strings
     if match.size == 0:
         return s1 + s2
 
     # Take s1 up to but not including the match
-    result = s1[:match.a]
+    result = s1[: match.a]
 
     # Add everything from s2 that starts from the match
-    result += s2[match.b:]
-    
+    result += s2[match.b :]
+
     return result
 
 
@@ -155,11 +153,11 @@ def knit_string_list(content_list: list) -> str:
     """
     if not content_list:
         return ""
-    
+
     result = content_list[0]
     for i in range(1, len(content_list)):
         result = knit_strings(result, content_list[i])
-    
+
     return result
 
 
@@ -220,6 +218,7 @@ def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=20):
 
     return segments
 
+
 def initialize_log_file(output_folder):
     """
     Initialize or load an existing log file for tracking image processing results.
@@ -232,61 +231,94 @@ def initialize_log_file(output_folder):
             - str: Path to the log file
             - pandas.DataFrame: DataFrame containing the log entries
     """
-    log_file_path = os.path.join(output_folder, 'processing_log.csv')
+    log_file_path = os.path.join(output_folder, "processing_log.csv")
     if os.path.exists(log_file_path):
         log_df = pd.read_csv(log_file_path)
     else:
-        log_df = pd.DataFrame(columns=['file_name', 'processing_time', 'input_tokens', 'output_tokens', 'total_tokens', 'sub_images', 'status', 'timestamp'])
+        log_df = pd.DataFrame(
+            columns=[
+                "file_name",
+                "processing_time",
+                "input_tokens",
+                "output_tokens",
+                "total_tokens",
+                "sub_images",
+                "status",
+                "timestamp",
+            ]
+        )
     return log_file_path, log_df
-
 
 
 def combine_article_segments(df):
     """
     Process DataFrame by grouping and knitting text within groups, including segment counts and token information.
-    
+
     Args:
-        df (pandas.DataFrame): Input DataFrame with columns 'issue_id', 'page_number', 
+        df (pandas.DataFrame): Input DataFrame with columns 'issue_id', 'page_number',
                              'block', 'column_number', 'reading_order', 'segment', 'text',
                              'prompt_tokens', 'completion_tokens', 'total_tokens'
-    
+
     Returns:
         pandas.DataFrame: Processed DataFrame with knitted text and aggregated metrics
     """
     # Create a copy of the input DataFrame
     df = df.copy()
-    
+
     # Sort the DataFrame by segment within groups
-    df = df.sort_values(['issue_id', 'page_number', 'block', 'column', 
-                        'reading_order', 'segment'])
-    
+    df = df.sort_values(
+        ["issue_id", "page_number", "block", "column", "reading_order", "segment"]
+    )
+
     # Function to process each group
     def knit_group_texts(group):
-        text_list = group['content'].tolist()
+        text_list = group["content"].tolist()
         knitted_text = knit_string_list(text_list)
-        
-        return pd.Series({
-            'content': knitted_text,
-            'segment_count': len(group),
-            'prompt_tokens': group['prompt_tokens'].sum(),
-            'completion_tokens': group['completion_tokens'].sum(),
-            'total_tokens': group['total_tokens'].sum()
-        })
-    
+
+        return pd.Series(
+            {
+                "content": knitted_text,
+                "segment_count": len(group),
+                "prompt_tokens": group["prompt_tokens"].sum(),
+                "completion_tokens": group["completion_tokens"].sum(),
+                "total_tokens": group["total_tokens"].sum(),
+            }
+        )
+
     # Group and apply the knitting function
-    result_df = (df.groupby(['issue_id', 'page_number', 'block', 'column', 'class',
-                            'reading_order'])
-                 .apply(knit_group_texts)
-                 .reset_index())
-    
-    result_df['box_page_id'] = "B" + result_df['block'].astype(str) + "C"+result_df['column'].astype(str)  + "R" + result_df['reading_order'].astype(str) 
-    result_df['page_id'] = result_df['issue_id'] + "_page_" + result_df['page_number'].astype(str)
-    
+    result_df = (
+        df.groupby(
+            ["issue_id", "page_number", "block", "column", "class", "reading_order"]
+        )
+        .apply(knit_group_texts)
+        .reset_index()
+    )
+
+    result_df["box_page_id"] = (
+        "B"
+        + result_df["block"].astype(str)
+        + "C"
+        + result_df["column"].astype(str)
+        + "R"
+        + result_df["reading_order"].astype(str)
+    )
+    result_df["page_id"] = (
+        result_df["issue_id"] + "_page_" + result_df["page_number"].astype(str)
+    )
+
     return result_df
 
 
-
-def update_log(log_df, filename, processing_time, total_input_tokens, total_output_tokens, total_tokens, sub_images, status):
+def update_log(
+    log_df,
+    filename,
+    processing_time,
+    total_input_tokens,
+    total_output_tokens,
+    total_tokens,
+    sub_images,
+    status,
+):
     """
     Update the processing log with new entry information.
 
@@ -303,20 +335,21 @@ def update_log(log_df, filename, processing_time, total_input_tokens, total_outp
     Returns:
         pandas.DataFrame: Updated log DataFrame.
     """
-    log_entry = pd.DataFrame({
-        'file_name': [filename],
-        'processing_time': [processing_time],
-        'input_tokens': [total_input_tokens],
-        'output_tokens': [total_output_tokens],
-        'total_tokens': [total_tokens],
-        'sub_images': [sub_images],
-        'status': [status],
-        'timestamp': [datetime.now()]
-    })
-    return pd.concat([log_df[log_df['file_name'] != filename], log_entry], ignore_index=True)
-
-
-
+    log_entry = pd.DataFrame(
+        {
+            "file_name": [filename],
+            "processing_time": [processing_time],
+            "input_tokens": [total_input_tokens],
+            "output_tokens": [total_output_tokens],
+            "total_tokens": [total_tokens],
+            "sub_images": [sub_images],
+            "status": [status],
+            "timestamp": [datetime.now()],
+        }
+    )
+    return pd.concat(
+        [log_df[log_df["file_name"] != filename], log_entry], ignore_index=True
+    )
 
 
 def save_encoded_images(encoded_images, output_folder):
@@ -343,22 +376,23 @@ def save_encoded_images(encoded_images, output_folder):
         try:
             # Decode base64 string
             img_data = base64.b64decode(encoded_string)
-            
+
             # Create file path
             file_path = os.path.join(output_folder, f"{key}.png")
-            
+
             # Save image
-            with open(file_path, 'wb') as f:
+            with open(file_path, "wb") as f:
                 f.write(img_data)
-            
+
             saved_paths.append(file_path)
-            
+
         except Exception as e:
             print(f"Error saving image {key}: {str(e)}")
             continue
-    
+
     print(f"Saved {len(saved_paths)} images to {output_folder}")
     return saved_paths
+
 
 def crop_image_to_bbox(image, bbox_dict, height, width):
     """
@@ -383,11 +417,11 @@ def crop_image_to_bbox(image, bbox_dict, height, width):
         - Coordinates are converted to integers
         - Invalid coordinates (x2 ≤ x1 or y2 ≤ y1) result in an empty dictionary
     """
-        # Extract coordinates
-    x1 = max(0, int(bbox_dict['x1']))
-    y1 = max(0, int(bbox_dict['y1']))
-    x2 = min(width, int(bbox_dict['x2']))
-    y2 = min(height, int(bbox_dict['y2']))
+    # Extract coordinates
+    x1 = max(0, int(bbox_dict["x1"]))
+    y1 = max(0, int(bbox_dict["y1"]))
+    x2 = min(width, int(bbox_dict["x2"]))
+    y2 = min(height, int(bbox_dict["y2"]))
 
     if x2 <= x1 or y2 <= y1:
         print(f"Invalid coordinates for box {bbox_dict['box_page_id']}")
@@ -402,20 +436,23 @@ def crop_image_to_bbox(image, bbox_dict, height, width):
 
     return cropped_image
 
+
 def convert_to_pil(cv2_image):
     """Convert CV2 image to PIL image."""
     return Image.fromarray(cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB))
 
+
 def deskew_image(pil_image):
     """Deskew a PIL image using Wand."""
     buffer = BytesIO()
-    pil_image.save(buffer, format='PNG')
+    pil_image.save(buffer, format="PNG")
     buffer.seek(0)
-    
+
     with wand.image.Image(blob=buffer.getvalue()) as wand_img:
         wand_img.deskew(0.4 * wand_img.quantum_range)
-        deskewed_buffer = BytesIO(wand_img.make_blob('PNG'))
+        deskewed_buffer = BytesIO(wand_img.make_blob("PNG"))
         return Image.open(deskewed_buffer)
+
 
 def pad_wide_image(cv2_image):
     """Pad wide images to make them square."""
@@ -423,7 +460,7 @@ def pad_wide_image(cv2_image):
     diff = width - height
     top_padding = diff // 2
     bottom_padding = diff - top_padding
-    
+
     return cv2.copyMakeBorder(
         cv2_image,
         top_padding,
@@ -431,8 +468,9 @@ def pad_wide_image(cv2_image):
         0,
         0,
         cv2.BORDER_CONSTANT,
-        value=[255, 255, 255]
+        value=[255, 255, 255],
     )
+
 
 def encode_pil_image(pil_image, page_id, box_page_id, segment_num, image_class):
     """
@@ -454,14 +492,17 @@ def encode_pil_image(pil_image, page_id, box_page_id, segment_num, image_class):
     """
     buffered = BytesIO()
     pil_image.save(buffered, format="PNG")
-    
+
     key = f"{page_id}_{image_class}_{box_page_id}_segment_{segment_num}"
     return key, {
-        'image': base64.b64encode(buffered.getvalue()).decode('utf-8'),
-        'class': image_class
+        "image": base64.b64encode(buffered.getvalue()).decode("utf-8"),
+        "class": image_class,
     }
 
-def process_single_box(image, row, height, width, max_ratio, overlap_fraction, deskew, crop_image = True):
+
+def process_single_box(
+    image, row, height, width, max_ratio, overlap_fraction, deskew, crop_image=True
+):
     """
     Process a single bounding box from an image by cropping, deskewing, and encoding it based on specific criteria.
 
@@ -510,46 +551,60 @@ def process_single_box(image, row, height, width, max_ratio, overlap_fraction, d
             cropped = image
 
         cropped_pil = convert_to_pil(cropped)
-        is_figure = row.get('class') == 'figure'
-        image_class = row.get('class', 'unknown')
+        is_figure = row.get("class") == "figure"
+        image_class = row.get("class", "unknown")
 
         # Apply deskewing if needed
         if deskew and not is_figure:
             cropped_pil = deskew_image(cropped_pil)
 
         if is_figure:
-            key, value = encode_pil_image(cropped_pil, row['page_id'], row['box_page_id'], 0, image_class)
+            key, value = encode_pil_image(
+                cropped_pil, row["page_id"], row["box_page_id"], 0, image_class
+            )
             return {key: value}
 
         # Process based on ratio
         crop_height, crop_width = cropped.shape[:2]
         ratio = crop_height / crop_width
-        
+
         if ratio > max_ratio:
             # Split tall images
             segments = split_image(cropped_pil, max_ratio, overlap_fraction)
             return {
-                k: v for i, segment in enumerate(segments)
-                for k, v in [encode_pil_image(segment, row['page_id'], row['box_page_id'], i, image_class)]
+                k: v
+                for i, segment in enumerate(segments)
+                for k, v in [
+                    encode_pil_image(
+                        segment, row["page_id"], row["box_page_id"], i, image_class
+                    )
+                ]
             }
-        
+
         elif ratio < 1:
             # Pad wide images
             padded = pad_wide_image(cropped)
             padded_pil = convert_to_pil(padded)
-            key, value = encode_pil_image(padded_pil, row['page_id'], row['box_page_id'], 0, image_class)
+            key, value = encode_pil_image(
+                padded_pil, row["page_id"], row["box_page_id"], 0, image_class
+            )
             return {key: value}
-        
+
         else:
             # Process normal ratio images
-            key, value = encode_pil_image(cropped_pil, row['page_id'], row['box_page_id'], 0, image_class)
+            key, value = encode_pil_image(
+                cropped_pil, row["page_id"], row["box_page_id"], 0, image_class
+            )
             return {key: value}
 
     except Exception as e:
         print(f"Error processing box {row['box_page_id']}: {str(e)}")
         return {}
 
-def crop_and_encode_boxes(df, images_folder, max_ratio=1, overlap_fraction=0.2, deskew=True, crop_image = True):
+
+def crop_and_encode_boxes(
+    df, images_folder, max_ratio=1, overlap_fraction=0.2, deskew=True, crop_image=True
+):
     """
     Process and encode image regions defined by bounding boxes in the input DataFrame.
 
@@ -599,7 +654,7 @@ def crop_and_encode_boxes(df, images_folder, max_ratio=1, overlap_fraction=0.2, 
     """
     encoded_images = {}
 
-    for filename, group in df.groupby('filename'):
+    for filename, group in df.groupby("filename"):
         image_path = os.path.join(images_folder, filename)
         image = cv2.imread(image_path)
 
@@ -611,14 +666,22 @@ def crop_and_encode_boxes(df, images_folder, max_ratio=1, overlap_fraction=0.2, 
 
         for _, row in group.iterrows():
             encoded_images.update(
-                process_single_box(image, row, height, width, max_ratio, overlap_fraction, deskew, crop_image= crop_image)
+                process_single_box(
+                    image,
+                    row,
+                    height,
+                    width,
+                    max_ratio,
+                    overlap_fraction,
+                    deskew,
+                    crop_image=crop_image,
+                )
             )
 
     return encoded_images
 
 
-    
-def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
+def create_jsonl_content(encoded_images, prompt_dict, max_tokens=2000):
     """
     Create JSONL content as a string for file upload.
 
@@ -633,11 +696,11 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
     str: The JSONL content as a string
     """
     jsonl_lines = []
-    default_prompt = prompt_dict.get('text', 'Describe this text')
+    default_prompt = prompt_dict.get("text", "Describe this text")
 
     for image_id, image_data in encoded_images.items():
         # Get the appropriate prompt based on the image class
-        image_class = image_data.get('class', 'text')
+        image_class = image_data.get("class", "text")
         prompt = prompt_dict.get(image_class, default_prompt)
 
         entry = {
@@ -648,24 +711,29 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens = 2000):
                     {
                         "role": "user",
                         "content": [
-                            {
-                                "type": "text",
-                                "text": prompt
-                            },
+                            {"type": "text", "text": prompt},
                             {
                                 "type": "image_url",
-                                "image_url": f"data:image/png;base64,{image_data['image']}"
-                            }
-                        ]
+                                "image_url": f"data:image/png;base64,{image_data['image']}",
+                            },
+                        ],
                     }
-                ]
-            }
+                ],
+            },
         }
         jsonl_lines.append(json.dumps(entry))
-    
+
     return "\n".join(jsonl_lines)
 
-def create_batch_job(client, base_filename, encoded_images, prompt_dict, model = "pixtral-12b-2409", job_type='testing'):
+
+def create_batch_job(
+    client,
+    base_filename,
+    encoded_images,
+    prompt_dict,
+    model="pixtral-12b-2409",
+    job_type="testing",
+):
     """
     Create a batch job and return job details including original filename information.
     Assumes only a single issue is being batched
@@ -685,17 +753,13 @@ def create_batch_job(client, base_filename, encoded_images, prompt_dict, model =
 
     # Create JSONL content
     jsonl_content = create_jsonl_content(encoded_images, prompt_dict)
-    
+
     # Convert string content to bytes
-    content_bytes = jsonl_content.encode('utf-8')
-    
+    content_bytes = jsonl_content.encode("utf-8")
+
     # Upload the file using the buffer
     batch_data = client.files.upload(
-        file={
-            "file_name": target_filename,
-            "content": content_bytes
-        },
-        purpose="batch"
+        file={"file_name": target_filename, "content": content_bytes}, purpose="batch"
     )
 
     # Create the job with metadata including the target filename
@@ -703,20 +767,26 @@ def create_batch_job(client, base_filename, encoded_images, prompt_dict, model =
         input_files=[batch_data.id],
         model=model,
         endpoint="/v1/chat/completions",
-        metadata={
-            "job_type": job_type,
-            "target_filename": target_filename
-        }
+        metadata={"job_type": job_type, "target_filename": target_filename},
     )
 
     return created_job.id, target_filename
 
 
-def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_file='data/processed_jobs.csv', 
-                           deskew = True, crop_image= True, max_ratio = 1, model = "pixtral-12b-2409"):
+def process_issues_to_jobs(
+    bbox_df,
+    images_folder,
+    prompt_dict,
+    client,
+    output_file="data/processed_jobs.csv",
+    deskew=True,
+    crop_image=True,
+    max_ratio=1,
+    model="pixtral-12b-2409",
+):
     """
     Process periodical issues one at a time, creating batch jobs for OCR processing
-    
+
     Parameters:
     bbox_df (DataFrame): DataFrame containing bounding box information
     images_folder (str): Path to folder containing images
@@ -731,10 +801,10 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
 
     if not os.path.exists(images_folder):
         raise FileNotFoundError(f"Images folder not found: {images_folder}")
-    
-    if not isinstance(prompt_dict, dict) or 'text' not in prompt_dict:
+
+    if not isinstance(prompt_dict, dict) or "text" not in prompt_dict:
         raise ValueError("prompt_dict must be a dictionary containing 'text' key")
-    
+
     # Create output directory if it doesn't exist
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
 
@@ -743,71 +813,73 @@ def process_issues_to_jobs(bbox_df, images_folder, prompt_dict , client, output_
         existing_jobs_df = pd.read_csv(output_file)
         print(f"Loaded existing jobs file with {len(existing_jobs_df)} records")
     except FileNotFoundError:
-        existing_jobs_df = pd.DataFrame(columns=['issue', 'job_id', 'target_filename'])
+        existing_jobs_df = pd.DataFrame(columns=["issue", "job_id", "target_filename"])
         print("Creating new jobs tracking file")
-    
+
     # Get unique issue_ids
-    unique_issues = bbox_df['issue'].unique()
-    
+    unique_issues = bbox_df["issue"].unique()
+
     # Counter for saving frequency
     processed_since_save = 0
-    
+
     for issue_id in tqdm(unique_issues, desc="Processing issues"):
         # Filter bbox_df for current issue
-        issue_df = bbox_df[bbox_df['issue'] == issue_id]
-        
+        issue_df = bbox_df[bbox_df["issue"] == issue_id]
+
         # Check if this issue has already been processed
-        if issue_id in existing_jobs_df['issue'].values:
-            #print(f"Skipping issue {issue_id} - already processed")
+        if issue_id in existing_jobs_df["issue"].values:
+            # print(f"Skipping issue {issue_id} - already processed")
             continue
-        
+
         try:
             # Encode images for this issue
             encoded_images = crop_and_encode_boxes(
                 df=issue_df,
-                images_folder = images_folder,
-                max_ratio = max_ratio,
+                images_folder=images_folder,
+                max_ratio=max_ratio,
                 overlap_fraction=0.2,
-                deskew = deskew,
-                crop_image = crop_image
+                deskew=deskew,
+                crop_image=crop_image,
             )
-            
+
             # Create batch job
             job_id, target_filename = create_batch_job(
-                client, 
-                issue_id, 
-                encoded_images, 
+                client,
+                issue_id,
+                encoded_images,
                 prompt_dict,
-                model = model,
+                model=model,
             )
-            
+
             # Add results to DataFrame
-            new_row = pd.DataFrame({
-                'issue': [issue_id],
-                'job_id': [job_id],
-                'target_filename': [target_filename]
-            })
+            new_row = pd.DataFrame(
+                {
+                    "issue": [issue_id],
+                    "job_id": [job_id],
+                    "target_filename": [target_filename],
+                }
+            )
             existing_jobs_df = pd.concat([existing_jobs_df, new_row], ignore_index=True)
-            
+
             # Save to file every 5 processed issues
             processed_since_save += 1
             if processed_since_save >= 5:
                 existing_jobs_df.to_csv(output_file, index=False)
                 processed_since_save = 0
-                #print(f"Saved progress to {output_file}")
-            
-            #print(f"Successfully processed page_id {issue_id}")
-            
+                # print(f"Saved progress to {output_file}")
+
+            # print(f"Successfully processed page_id {issue_id}")
+
         except Exception as e:
             print(f"Error processing page_id {issue_id}: {str(e)}")
             # Save progress in case of error
             existing_jobs_df.to_csv(output_file, index=False)
             continue
-    
+
     # Final save
     existing_jobs_df.to_csv(output_file, index=False)
     print(f"Processing complete. Final results saved to {output_file}")
-    
+
     return existing_jobs_df
 
 
@@ -822,12 +894,12 @@ def process_mistral_responses(response):
         list: List of parsed JSON objects
     """
 
-    data = response.read() 
+    data = response.read()
     # Decode bytes to string
-    text_data = data.decode('utf-8')
+    text_data = data.decode("utf-8")
 
     # Split into individual JSON objects
-    json_strings = text_data.strip().split('\n')
+    json_strings = text_data.strip().split("\n")
 
     parsed_responses = []
     for json_str in json_strings:
@@ -840,13 +912,17 @@ def process_mistral_responses(response):
 
     return parsed_responses
 
-def download_processed_jobs(client, jobs_file='data/processed_jobs.csv', 
-                          output_dir='data/downloaded_results', 
-                          log_file='data/download_log.csv'):
+
+def download_processed_jobs(
+    client,
+    jobs_file="data/processed_jobs.csv",
+    output_dir="data/downloaded_results",
+    log_file="data/download_log.csv",
+):
     """
     Download results for all processed jobs listed in the jobs file with detailed logging.
     Downloads each job's output as a JSONL file using the target filename from the jobs file.
-    
+
     Parameters:
     -----------
     client : object
@@ -857,7 +933,7 @@ def download_processed_jobs(client, jobs_file='data/processed_jobs.csv',
         Directory where downloaded JSONL files will be stored
     log_file : str
         Path to the CSV file for logging download attempts and results
-    
+
     Returns:
     --------
     dict
@@ -866,160 +942,182 @@ def download_processed_jobs(client, jobs_file='data/processed_jobs.csv',
     # Create output and log directories if they don't exist
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
-    
+
     # Initialize or load log file
     try:
         log_df = pd.read_csv(log_file)
     except FileNotFoundError:
-        log_df = pd.DataFrame(columns=[
-            'issue', 'job_id', 'target_filename', 'status', 
-            'download_time', 'attempt_count', 'error_message', 'timestamp'
-        ])
-    
+        log_df = pd.DataFrame(
+            columns=[
+                "issue",
+                "job_id",
+                "target_filename",
+                "status",
+                "download_time",
+                "attempt_count",
+                "error_message",
+                "timestamp",
+            ]
+        )
+
     # Load jobs file
     try:
         jobs_df = pd.read_csv(jobs_file)
     except FileNotFoundError:
         raise FileNotFoundError(f"Jobs file not found: {jobs_file}")
-    
+
     # Initialize counters
     results = {
-        'total_jobs': len(jobs_df),
-        'successful_downloads': 0,
-        'failed_downloads': 0,
-        'failed_jobs': []
+        "total_jobs": len(jobs_df),
+        "successful_downloads": 0,
+        "failed_downloads": 0,
+        "failed_jobs": [],
     }
-    
+
     # Process each job
-    for _, row in tqdm(jobs_df.iterrows(), total=len(jobs_df), desc="Downloading job results"):
-        issue = row['issue']
-        job_id = row['job_id']
-        target_filename = row['target_filename']
+    for _, row in tqdm(
+        jobs_df.iterrows(), total=len(jobs_df), desc="Downloading job results"
+    ):
+        issue = row["issue"]
+        job_id = row["job_id"]
+        target_filename = row["target_filename"]
         output_path = os.path.join(output_dir, target_filename)
-        
+
         # Check if file already exists
         if os.path.exists(output_path):
-            results['successful_downloads'] += 1
+            results["successful_downloads"] += 1
             continue
-        
+
         # Check if job was already successfully processed
-        if len(log_df[(log_df['job_id'] == job_id) & (log_df['status'] == 'success')]) > 0:
-            results['successful_downloads'] += 1
+        if (
+            len(log_df[(log_df["job_id"] == job_id) & (log_df["status"] == "success")])
+            > 0
+        ):
+            results["successful_downloads"] += 1
             continue
-        
+
         start_time = time.time()
         try:
             # Get job status
             retrieved_job = client.batch.jobs.get(job_id=job_id)
-            
+
             # Check if job is completed
-            if retrieved_job.status == 'SUCCESS':
+            if retrieved_job.status == "SUCCESS":
                 try:
                     # Download and save the file
-                    output_file = client.files.download(file_id=retrieved_job.output_file)
+                    output_file = client.files.download(
+                        file_id=retrieved_job.output_file
+                    )
                     parsed_data = process_mistral_responses(output_file)
-                    with open(output_path, 'w', encoding='utf-8') as f:
+                    with open(output_path, "w", encoding="utf-8") as f:
                         json.dump(parsed_data, f, indent=2, ensure_ascii=False)
-                    
+
                     download_time = time.time() - start_time
-                    results['successful_downloads'] += 1
-                    
+                    results["successful_downloads"] += 1
+
                     # Update log
-                    new_log_entry = pd.DataFrame({
-                        'issue': [issue],
-                        'job_id': [job_id],
-                        'target_filename': [target_filename],
-                        'status': ['success'],
-                        'download_time': [download_time],
-                        'attempt_count': [1],
-                        'error_message': [''],
-                        'timestamp': [datetime.now()]
-                    })
-                    
+                    new_log_entry = pd.DataFrame(
+                        {
+                            "issue": [issue],
+                            "job_id": [job_id],
+                            "target_filename": [target_filename],
+                            "status": ["success"],
+                            "download_time": [download_time],
+                            "attempt_count": [1],
+                            "error_message": [""],
+                            "timestamp": [datetime.now()],
+                        }
+                    )
+
                 except Exception as e:
                     error_msg = f"Download failed: {str(e)}"
                     download_time = time.time() - start_time
-                    results['failed_downloads'] += 1
-                    results['failed_jobs'].append(job_id)
-                    
-                    new_log_entry = pd.DataFrame({
-                        'issue': [issue],
-                        'job_id': [job_id],
-                        'target_filename': [target_filename],
-                        'status': ['failed'],
-                        'download_time': [download_time],
-                        'attempt_count': [1],
-                        'error_message': [error_msg],
-                        'timestamp': [datetime.now()]
-                    })
-                    
+                    results["failed_downloads"] += 1
+                    results["failed_jobs"].append(job_id)
+
+                    new_log_entry = pd.DataFrame(
+                        {
+                            "issue": [issue],
+                            "job_id": [job_id],
+                            "target_filename": [target_filename],
+                            "status": ["failed"],
+                            "download_time": [download_time],
+                            "attempt_count": [1],
+                            "error_message": [error_msg],
+                            "timestamp": [datetime.now()],
+                        }
+                    )
+
             else:
                 error_msg = f"Job status: {retrieved_job.status}"
-                results['failed_downloads'] += 1
-                results['failed_jobs'].append(job_id)
-                
-                new_log_entry = pd.DataFrame({
-                    'issue': [issue],
-                    'job_id': [job_id],
-                    'target_filename': [target_filename],
-                    'status': ['pending'],
-                    'download_time': [0],
-                    'attempt_count': [1],
-                    'error_message': [error_msg],
-                    'timestamp': [datetime.now()]
-                })
-            
+                results["failed_downloads"] += 1
+                results["failed_jobs"].append(job_id)
+
+                new_log_entry = pd.DataFrame(
+                    {
+                        "issue": [issue],
+                        "job_id": [job_id],
+                        "target_filename": [target_filename],
+                        "status": ["pending"],
+                        "download_time": [0],
+                        "attempt_count": [1],
+                        "error_message": [error_msg],
+                        "timestamp": [datetime.now()],
+                    }
+                )
+
         except Exception as e:
             error_msg = f"Job retrieval failed: {str(e)}"
             download_time = time.time() - start_time
-            results['failed_downloads'] += 1
-            results['failed_jobs'].append(job_id)
-            
-            new_log_entry = pd.DataFrame({
-                'issue': [issue],
-                'job_id': [job_id],
-                'target_filename': [target_filename],
-                'status': ['error'],
-                'download_time': [download_time],
-                'attempt_count': [1],
-                'error_message': [error_msg],
-                'timestamp': [datetime.now()]
-            })
-        
+            results["failed_downloads"] += 1
+            results["failed_jobs"].append(job_id)
+
+            new_log_entry = pd.DataFrame(
+                {
+                    "issue": [issue],
+                    "job_id": [job_id],
+                    "target_filename": [target_filename],
+                    "status": ["error"],
+                    "download_time": [download_time],
+                    "attempt_count": [1],
+                    "error_message": [error_msg],
+                    "timestamp": [datetime.now()],
+                }
+            )
+
         # Update log file
         log_df = pd.concat([log_df, new_log_entry], ignore_index=True)
         log_df.to_csv(log_file, index=False)
-        
+
         # Add a small delay to avoid rate limiting
         time.sleep(0.1)
-    
+
     # Print summary
     print("\nDownload Summary:")
     print(f"Total jobs: {results['total_jobs']}")
     print(f"Successfully downloaded: {results['successful_downloads']}")
     print(f"Failed downloads: {results['failed_downloads']}")
     print(f"Downloaded files saved in: {output_dir}")
-    
+
     return results
 
 
 def convert_returned_json_to_dataframe(json_data):
-
     """
     Turns the json of the returned data into a dataframe
-    
+
     """
     extracted_data = []
 
     for item in json_data:
         row = {
-            'id': item['id'],
-            'custom_id': item['custom_id'],
-            'prompt_tokens': item['response']['body']['usage']['prompt_tokens'],
-            'completion_tokens': item['response']['body']['usage']['completion_tokens'],
-            'total_tokens': item['response']['body']['usage']['total_tokens'],
-            'finish_reason': item['response']['body']['choices'][0]['finish_reason'],
-            'content': item['response']['body']['choices'][0]['message']['content']
+            "id": item["id"],
+            "custom_id": item["custom_id"],
+            "prompt_tokens": item["response"]["body"]["usage"]["prompt_tokens"],
+            "completion_tokens": item["response"]["body"]["usage"]["completion_tokens"],
+            "total_tokens": item["response"]["body"]["usage"]["total_tokens"],
+            "finish_reason": item["response"]["body"]["choices"][0]["finish_reason"],
+            "content": item["response"]["body"]["choices"][0]["message"]["content"],
         }
         extracted_data.append(row)
 
@@ -1027,15 +1125,14 @@ def convert_returned_json_to_dataframe(json_data):
 
 
 def parse_filename(filename):
-
-    """ 
+    """
     This function is obselete as decompose filenames has been re-factored to be vectorised over dataframes
     """
     # Split by '_page_' first to get issue_id
-    issue_id, rest = filename.split('_page_')
+    issue_id, rest = filename.split("_page_")
 
     # Split the rest by '_' to separate components
-    parts = rest.split('_')
+    parts = rest.split("_")
 
     # Get page number
     page_number = int(parts[0])
@@ -1046,21 +1143,21 @@ def parse_filename(filename):
     position_info = parts[2]
 
     # Extract B, C, R components
-    block = int(position_info.split('B')[1].split('C')[0])
-    column = int(position_info.split('C')[1].split('R')[0])
-    reading_order = int(position_info.split('R')[1])
+    block = int(position_info.split("B")[1].split("C")[0])
+    column = int(position_info.split("C")[1].split("R")[0])
+    reading_order = int(position_info.split("R")[1])
 
     # Get segment number
     segment = int(parts[4])
 
     return {
-        'issue_id': issue_id,
-        'page_number': page_number,
-        'class':class_info,
-        'block': block,
-        'column': column,
-        'reading_order': reading_order,
-        'segment': segment
+        "issue_id": issue_id,
+        "page_number": page_number,
+        "class": class_info,
+        "block": block,
+        "column": column,
+        "reading_order": reading_order,
+        "segment": segment,
     }
 
 
@@ -1070,27 +1167,30 @@ def decompose_filenames(df):
     Made more robust for parallel processing.
     """
     # Split custom_id into components
-    parts = df['custom_id'].str.split('_page_', expand=True)
+    parts = df["custom_id"].str.split("_page_", expand=True)
     issue_id = parts[0]
 
-    rest_parts = parts[1].str.split('_', expand=True)
+    rest_parts = parts[1].str.split("_", expand=True)
 
     # Extract position info more safely
     position_info = rest_parts[2]
-    block = position_info.str.extract(r'B(\d+)').astype(int)
-    column = position_info.str.extract(r'C(\d+)').astype(int)
-    reading_order = position_info.str.extract(r'R(\d+)').astype(int)
+    block = position_info.str.extract(r"B(\d+)").astype(int)
+    column = position_info.str.extract(r"C(\d+)").astype(int)
+    reading_order = position_info.str.extract(r"R(\d+)").astype(int)
 
     # Create new columns without squeeze
-    new_cols = pd.DataFrame({
-        'issue_id': issue_id,
-        'page_number': rest_parts[0].astype(int),
-        'class': rest_parts[1],
-        'block': block.iloc[:, 0],  # Use iloc instead of squeeze
-        'column': column.iloc[:, 0],
-        'reading_order': reading_order.iloc[:, 0],
-        'segment': rest_parts[4].astype(int)
-    }, index=df.index)
+    new_cols = pd.DataFrame(
+        {
+            "issue_id": issue_id,
+            "page_number": rest_parts[0].astype(int),
+            "class": rest_parts[1],
+            "block": block.iloc[:, 0],  # Use iloc instead of squeeze
+            "column": column.iloc[:, 0],
+            "reading_order": reading_order.iloc[:, 0],
+            "segment": rest_parts[4].astype(int),
+        },
+        index=df.index,
+    )
 
     # Combine with original DataFrame
     return pd.concat([df, new_cols], axis=1)
@@ -1115,45 +1215,46 @@ def reassemble_issue_segments(jsonl_path):
 
     return df
 """
+
+
 def reassemble_issue_segments(jsonl_path):
     """
     Process a single JSON file and return a DataFrame.
     """
     try:
         # Load and process JSON
-        with open(jsonl_path, 'r') as file:
+        with open(jsonl_path, "r") as file:
             json_data = json.load(file)
-        
+
         # Create initial DataFrame
         df = convert_returned_json_to_dataframe(json_data)
         if df.empty:
             print(f"Empty DataFrame after initial conversion: {jsonl_path}")
             return pd.DataFrame()
-            
+
         # Process filenames
         df = decompose_filenames(df)
         if df.empty:
             print(f"Empty DataFrame after filename decomposition: {jsonl_path}")
             return pd.DataFrame()
-            
+
         # Combine segments
         df = combine_article_segments(df)
         if df.empty:
             print(f"Empty DataFrame after combining segments: {jsonl_path}")
             return pd.DataFrame()
-            
+
         return df
-        
+
     except Exception as e:
         print(f"Error processing {jsonl_path}: {str(e)}")
         return pd.DataFrame()
 
 
-
 def process_json_files(json_folder, output_path, num_workers=None):
     """
     Process JSON files in parallel and save as single parquet file.
-    
+
     Parameters:
     -----------
     json_folder : str
@@ -1165,30 +1266,32 @@ def process_json_files(json_folder, output_path, num_workers=None):
     """
     if num_workers is None:
         num_workers = max(1, multiprocessing.cpu_count() - 1)
-    
+
     # Get list of JSON files
     json_files = [
-        os.path.join(json_folder, f) 
+        os.path.join(json_folder, f)
         for f in os.listdir(json_folder)
-        if f.endswith(('.json', '.jsonl'))
+        if f.endswith((".json", ".jsonl"))
     ]
-    
+
     print(f"Processing {len(json_files)} files using {num_workers} workers")
-    
+
     # Process files in parallel with progress bar
     with ProcessPoolExecutor(max_workers=num_workers) as executor:
-        dfs = list(tqdm(
-            executor.map(reassemble_issue_segments, json_files),
-            total=len(json_files),
-            desc="Processing JSON files"
-        ))
-    
+        dfs = list(
+            tqdm(
+                executor.map(reassemble_issue_segments, json_files),
+                total=len(json_files),
+                desc="Processing JSON files",
+            )
+        )
+
     print("Combining results...")
     final_df = pd.concat(dfs, ignore_index=True)
-    
+
     print(f"Saving to {output_path}")
     final_df.to_parquet(output_path, index=False)
-    
+
     print(f"Completed. Final DataFrame shape: {final_df.shape}")
     return final_df
 
@@ -1211,8 +1314,8 @@ def delete_all_batch_files(client, api_key, limit=100):
     try:
         # Set up headers for requests
         headers = {
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json'
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
         }
 
         # Handle pagination
@@ -1221,15 +1324,13 @@ def delete_all_batch_files(client, api_key, limit=100):
 
         while has_more:
             # List files with pagination
-            params = {'limit': limit}
+            params = {"limit": limit}
             if after:
-                params['after'] = after
+                params["after"] = after
 
             # Make GET request to list files
             list_response = requests.get(
-                'https://api.mistral.ai/v1/files',
-                headers=headers,
-                params=params
+                "https://api.mistral.ai/v1/files", headers=headers, params=params
             )
 
             if list_response.status_code != 200:
@@ -1239,37 +1340,40 @@ def delete_all_batch_files(client, api_key, limit=100):
             files_data = list_response.json()
 
             # Process this page of files
-            for file in files_data.get('data', []):
+            for file in files_data.get("data", []):
                 try:
                     # Only delete files with purpose "batch"
-                    if file['purpose'] == "batch":
+                    if file["purpose"] == "batch":
                         # Make delete request
                         delete_response = requests.delete(
                             f'https://api.mistral.ai/v1/files/{file["id"]}',
-                            headers=headers
+                            headers=headers,
                         )
 
                         if delete_response.status_code == 200:
                             deleted_count += 1
                             print(f"Successfully deleted file with ID: {file['id']}")
                         else:
-                            failed_deletions.append({
-                                'file_id': file['id'],
-                                'error': f"Status code: {delete_response.status_code}"
-                            })
-                            print(f"Failed to delete file with ID: {file['id']}, Status code: {delete_response.status_code}")
+                            failed_deletions.append(
+                                {
+                                    "file_id": file["id"],
+                                    "error": f"Status code: {delete_response.status_code}",
+                                }
+                            )
+                            print(
+                                f"Failed to delete file with ID: {file['id']}, Status code: {delete_response.status_code}"
+                            )
 
                 except Exception as e:
-                    failed_deletions.append({
-                        'file_id': file['id'],
-                        'error': str(e)
-                    })
-                    print(f"Failed to delete file with ID: {file['id']}. Error: {str(e)}")
+                    failed_deletions.append({"file_id": file["id"], "error": str(e)})
+                    print(
+                        f"Failed to delete file with ID: {file['id']}. Error: {str(e)}"
+                    )
 
             # Check if there are more files to process
-            has_more = files_data.get('has_more', False)
-            if has_more and files_data['data']:
-                after = files_data['data'][-1]['id']
+            has_more = files_data.get("has_more", False)
+            if has_more and files_data["data"]:
+                after = files_data["data"][-1]["id"]
             else:
                 has_more = False
 

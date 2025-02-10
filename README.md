@@ -43,7 +43,7 @@ Each element of the project pipeline has a python script for execution. However,
 - classification_and_data_analysis.py: used to create the silver datasets for training the ModernBERT classifiers. Also analyses the performance of the models. Model training scripts can be found in the lightning_code folder.
 - result_section.py: The code used to generate the most of results section of the paper. Produces the tables plots etc.
 - send_to_pixel_streaming.py: An example of realtime sending to the Pixtral server.
-- comparative_analysis.py: Performance the use case comparative analysis of the periodical data in NCSE V2.0
+- comparative_analysis.py: Example use cases for comparative analysis of the periodical data in NCSE V2.0
 
 The scripts and ipynb to measure the performance of the alternative models can be found in the "alternative_models" folder
 

@@ -1,0 +1,32 @@
+
+# These are only needed when doing training or inference, 
+#they are left out of the main requirements to keep the virtual
+# environment smaller
+
+numba
+pandas
+numpy
+tqdm
+opencv-python
+matplotlib
+wand
+Pillow
+requests
+pdf2image
+seaborn
+scikit-learn
+scipy
+textstat
+mistralai
+python-dotenv
+jiwer
+pyarrow
+pytesseract
+litellm
+tenacity
+
+datasets
+doclayout-yolo
+huggingface-hub
+transformers
+torch

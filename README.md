@@ -12,15 +12,37 @@ xxxxxxxxxx
 
 # Using this Code Repository
 
-In order to use the code in this repo, please first install the requirements.txt and the local package "function_modules". 
-It is reccmomended to use the Astral UV library for package management. Install using the below commands
+This repository can be installed in two configurations:
+1. Base installation (CPU-only) - for basic functionality
+2. Full installation (with GPU support) - for all features including GPU-accelerated processing
 
-`uv pip install -r requirements.txt`
-`uv pip install -e`
+## Installation
 
-In the case you are not using UV simply drop the 'uv' part of the command and install using pip
+It is recommended to use the Astral UV library for package management.
 
-If you are using the scripts which work with the original NCSE images ensure the path to the folders is in your `.env` file
+### Base Installation (CPU-only)
+```bash
+uv pip install -r requirements.txt
+uv pip install -e .
+```
+
+### Full Installation (with GPU support)
+```bash
+uv pip install -r requirements_gpu.txt
+uv pip install -e .
+```
+
+If you are not using UV, simply drop the 'uv' part of the command and install using pip:
+```bash
+pip install -r requirements.txt  # for base installation
+# or
+pip install -r requirements_gpu.txt  # for full installation with GPU support
+pip install -e .
+```
+
+## Environment Setup
+
+If you are using the scripts which work with the original NCSE images, ensure the path to the folders is in your `.env` file.
 
 # Project Pipeline
 

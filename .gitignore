@@ -3,6 +3,7 @@ __pycache__/
 
 #Nothing from the data file
 
+llvm.sh
 data/*
 archived/*
 # Jupyter Notebook

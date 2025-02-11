@@ -73,7 +73,7 @@ The scripts and ipynb to measure the performance of the alternative models can b
 - Create simple end-to-end non-batch example on Lightning
 
 # Note
-- The code is written in a mixture of marimo .py files and .ipynb files. This is becuase although marimo is preferred for it's ease of reporducibility, the GPU acitivity was performed on lightning.ai which is focused on .ipynb based code.
+- The code is written in a mixture of marimo and regular .py files. This is becuase although marimo is preferred for it's ease of reporducibility, the GPU acitivity was performed on lightning.ai which is focused on .ipynb based code or simple .py scripts.
 
 
 # Citing this project

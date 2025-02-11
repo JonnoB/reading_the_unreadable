@@ -222,7 +222,7 @@ def main():
 
             output_file = Path(args.output_dir) / f"classified_{input_file.name}"
 
-            df["bbox_uid"] = df["box_page_id"] + "_" + df["page_id"]
+            df["bbox_uid"] =  df["page_id"] + "_" + df["box_page_id"]
             df = df.drop(columns=["content", "box_page_id", "page_id"])
             df.to_parquet(output_file)
             print(f"Saved predictions to {output_file}")

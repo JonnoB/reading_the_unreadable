@@ -102,7 +102,7 @@ def _(
         for _target_file in os.listdir(processed_bboxes_path):
             print(_target_file)
             _temp = pd.read_parquet(os.path.join(processed_bboxes_path, _target_file))
-            _temp["bbox_uid"] = _temp["box_page_id"] + "_" + _temp["page_id"]
+            _temp["bbox_uid"] = _temp["page_id"] + "_" + _temp["box_page_id"]
             _temp = _temp.loc[_temp["class"] == "text"]
 
             _temp = _temp[["bbox_uid", "class"]]
@@ -335,7 +335,7 @@ def _(os, pd, processed_bboxes_path, sampled_text_topics, textstat):
 
     for _file in os.listdir(processed_bboxes_path):
         _temp = pd.read_parquet(os.path.join(processed_bboxes_path, _file))
-        _temp["bbox_uid"] = _temp["box_page_id"] + "_" + _temp["page_id"]
+        _temp["bbox_uid"] =_temp["page_id"] + "_" +  _temp["box_page_id"] 
         _temp = _temp.loc[_temp["bbox_uid"].isin(bbox_uid_list)]
         _temp["reading_ease"] = _temp["content"].apply(textstat.flesch_reading_ease)
         _temp = _temp[["bbox_uid", "reading_ease"]]

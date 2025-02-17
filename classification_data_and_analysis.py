@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.10.6"
+__generated_with = "0.11.2"
 app = marimo.App(width="medium")
 
 
@@ -30,7 +30,6 @@ def _(mo):
 
 @app.cell
 def _():
-    from datasets import Dataset
     import random
     import os
     import glob
@@ -57,7 +56,6 @@ def _():
     api_key = os.environ["MISTRAL_API_KEY"]
     client = Mistral(api_key=api_key)
     return (
-        Dataset,
         List,
         Mistral,
         Tuple,
@@ -456,7 +454,6 @@ def _(json, pd):
         df = df.sort_values("custom_id").reset_index(drop=True)
 
         return df
-
     return classifications_dict_to_df, process_dictionary_responses
 
 
@@ -514,6 +511,12 @@ def _(classifications_dict_to_df, data_set, process_dictionary_responses):
         sampled_issue_ids_sample_method
     )
 
+    text_class_df = text_class_df.drop(columns = ['custom_id', 'class_code', 'value', 'text_class', 'issue_id'])
+
+    text_class_df = text_class_df.rename(columns = {'text_class2':'text_class', 'class_code2':'class_code'})
+
+    text_class_df = text_class_df[['bbox_uid', 'content', 'class_code',  'is_train']]
+
     text_class_df.to_parquet("data/classification/silver_data/silver_text_type.parquet")
     return (
         class_to_int,
@@ -525,7 +528,13 @@ def _(classifications_dict_to_df, data_set, process_dictionary_responses):
 
 @app.cell
 def _(text_class_df):
-    text_class_df.groupby(["is_train", "class_code2"]).size()
+    print(text_class_df.head())
+    return
+
+
+@app.cell
+def _(text_class_df):
+    text_class_df.groupby(["is_train", "class_code"]).size()
     return
 
 
@@ -533,7 +542,7 @@ def _(text_class_df):
 def _(class_to_int, pd, text_class_df):
     test_set_preds = pd.read_parquet(
         "data/classification/predicted_text_type_testset.parquet"
-    ).merge(text_class_df[["bbox_uid", "text_class2", "is_train"]])
+    ).merge(text_class_df[["bbox_uid", "text_class", "is_train"]])
 
     test_set_preds = test_set_preds.loc[~test_set_preds["is_train"]]
 
@@ -573,13 +582,13 @@ def _(
     print("Classification Report:")
     print(
         classification_report(
-            test_set_preds["text_class2"], test_set_preds["predicted_class"]
+            test_set_preds["text_class"], test_set_preds["predicted_class"]
         )
     )
 
     # Create and plot confusion matrix
     cm = confusion_matrix(
-        test_set_preds["text_class2"], test_set_preds["predicted_class"]
+        test_set_preds["text_class"], test_set_preds["predicted_class"]
     )
     plt.figure(figsize=(10, 8))
 
@@ -605,7 +614,7 @@ def _(
 
     # Look at some misclassifications
     misclassified = test_set_preds[
-        test_set_preds["text_class2"] != test_set_preds["predicted_class"]
+        test_set_preds["text_class"] != test_set_preds["predicted_class"]
     ]
     return cm, labels, misclassified
 
@@ -831,10 +840,28 @@ def _(IPTC_class_df_raw, IPTC_data_set):
         _sampled_issue_ids_sample_method
     )
 
+    IPTC_class_df_for_train = IPTC_class_df_for_train.rename(columns = {'custom_id':'bbox_uid'})
+
+    IPTC_class_df_for_train = IPTC_class_df_for_train.drop(columns = ['issue_id'])
+
+    IPTC_class_df_for_train = IPTC_class_df_for_train[['bbox_uid', 'content', 'class_code', 'is_train']]
+
     IPTC_class_df_for_train.to_parquet(
         "data/classification/silver_data/silver_IPTC_class.parquet"
     )
     return (IPTC_class_df_for_train,)
+
+
+@app.cell
+def _(IPTC_class_df_for_train):
+    IPTC_class_df_for_train
+    return
+
+
+@app.cell
+def _(IPTC_class_df_for_train):
+    print(IPTC_class_df_for_train.head())
+    return
 
 
 @app.cell
@@ -919,7 +946,6 @@ def _():
 @app.cell
 def _():
     import marimo as mo
-
     return (mo,)
 
 

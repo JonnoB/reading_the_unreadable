@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.10.6"
+__generated_with = "0.11.2"
 app = marimo.App(width="medium")
 
 
@@ -14,7 +14,6 @@ def _():
     import pandas as pd
     import numpy as np
     import os
-    from gliner import GLiNER
     import matplotlib.pyplot as plt
     import seaborn as sns
     from sklearn.metrics.pairwise import cosine_similarity
@@ -52,7 +51,6 @@ def _():
         17: "NA",
     }
     return (
-        GLiNER,
         IPTC_topic_path,
         cosine_similarity,
         iptc_mapping,
@@ -385,7 +383,7 @@ def _(mo):
         # NER popularity comparision
 
 
-        Looking at the popularity of Crystal Palace/ Great exhibition and of Palmeston. comparing the Northern Star and the Leader
+        Looking at the popularity of Crystal Palace/ Great exhibition. comparing the Northern Star and the Leader
         """
     )
     return
@@ -473,15 +471,14 @@ def _(os, pd, plt, save_figs, sns, temporal_comparison):
 
 
 @app.cell
-def _(temp):
-    temp.groupby("periodical")["count"].sum()
+def _(temporal_comparison):
+    temporal_comparison['content'][0]
     return
 
 
 @app.cell
 def _():
     import marimo as mo
-
     return (mo,)
 
 

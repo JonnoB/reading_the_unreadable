@@ -1,29 +1,48 @@
+"""Text classification utilities for newspaper article analysis.
+
+This module provides functions for creating prompts and classifying newspaper articles
+into different categories using language models.
+"""
+
+from typing import Any, Dict, List, Optional, Union
 import json
 from tenacity import retry, wait_fixed, stop_after_attempt, retry_if_exception_type
+from transformers import PreTrainedTokenizer
 
 
-def truncate_to_n_tokens(text, tokenizer, max_tokens=100):
-    # Tokenize the text
+def truncate_to_n_tokens(
+    text: str, 
+    tokenizer: PreTrainedTokenizer, 
+    max_tokens: int = 100
+) -> str:
+    """Truncate text to a specified number of tokens.
+
+    Args:
+        text: The input text to truncate.
+        tokenizer: The tokenizer to use for encoding/decoding text.
+        max_tokens: Maximum number of tokens to keep. Defaults to 100.
+
+    Returns:
+        The truncated text decoded back from tokens.
+    """
     tokens = tokenizer.encode(text, add_special_tokens=False)
-
-    # Truncate to max_tokens
     truncated_tokens = tokens[:max_tokens]
-
-    # Decode back to text
     truncated_text = tokenizer.decode(truncated_tokens)
-
     return truncated_text
 
 
-def create_genre_prompt(article_text):
-    """
-    Generates a prompt for classifying newspaper articles into specific genres.
+def create_genre_prompt(article_text: str) -> str:
+    """Generate a prompt for classifying newspaper articles into genres.
+
+    The function creates a prompt that instructs an LLM to classify an article
+    into one of several predefined genres including news report, editorial,
+    letter, advert, review, poem/song/story, or other.
 
     Args:
-        article_text (str): The text of the article to classify.
+        article_text: The text of the article to classify.
 
     Returns:
-        str: A formatted prompt for classifying the article.
+        A formatted prompt string for genre classification.
     """
     genre_prompt = f"""
     Read the following article.
@@ -52,15 +71,18 @@ def create_genre_prompt(article_text):
     return genre_prompt
 
 
-def create_iptc_prompt(article_text):
-    """
-    Generates a prompt for classifying newspaper articles into specific IPTC categories.
+def create_iptc_prompt(article_text: str) -> str:
+    """Generate a prompt for classifying newspaper articles into IPTC categories.
+
+    The function creates a prompt that instructs an LLM to classify an article
+    into one or more IPTC (International Press Telecommunications Council) 
+    subject categories.
 
     Args:
-        article_text (str): The text of the article to classify.
+        article_text: The text of the article to classify.
 
     Returns:
-        str: A formatted prompt for classifying the article.
+        A formatted prompt string for IPTC classification.
     """
     iptc_prompt = f"""
     Read the following article.
@@ -105,7 +127,31 @@ def create_iptc_prompt(article_text):
     stop=stop_after_attempt(3),  # Maximum 3 attempts
     retry=retry_if_exception_type(Exception),
 )
-def classify_text_with_api(prompt, client, model="mistral-large-latest"):
+def classify_text_with_api(
+    prompt: str,
+    client: Any,
+    model: str = "mistral-large-latest"
+) -> Dict[str, Union[int, List[int]]]:
+    """Classify text using an LLM API with retry functionality.
+
+    This function sends a classification prompt to a language model API
+    and handles the response. It includes retry logic for robustness.
+    The function implements multiple parsing methods to handle various
+    response formats and provides detailed error logging.
+
+    Args:
+        prompt: The formatted prompt to send to the API.
+        client: The API client instance to use for making requests.
+        model: The name of the model to use. Defaults to "mistral-large-latest".
+
+    Returns:
+        A dictionary containing the classification result with format
+        {'class': int} for genre classification or {'class': List[int]}
+        for IPTC classification. Returns {'class': 99} on parsing failure.
+
+    Raises:
+        Exception: If the API call fails after all retry attempts.
+    """
     try:
         # Get API response
         chat_response = client.chat.complete(
@@ -118,7 +164,7 @@ def classify_text_with_api(prompt, client, model="mistral-large-latest"):
         # Remove any markdown formatting
         content = content.lstrip("```json").rstrip("```").strip()
 
-        def clean_response(text):
+        def clean_response(text: str) -> str:
             # Replace single quotes with double quotes for JSON compatibility
             text = text.replace("'", '"')
             # Remove any whitespace or newlines
@@ -136,7 +182,6 @@ def classify_text_with_api(prompt, client, model="mistral-large-latest"):
             try:
                 # Method 2: Python literal eval
                 import ast
-
                 result_dict = ast.literal_eval(content)
             except:
                 try:

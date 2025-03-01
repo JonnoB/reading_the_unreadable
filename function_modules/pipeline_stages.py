@@ -341,8 +341,7 @@ def download_batch_results(
 def process_results(
     json_folder: str,
     raw_output: str,
-    post_processed_output: str,
-    article_output: str
+    post_processed_output: str
 ) -> Dict[str, str]:
     """
     Process downloaded batch results to create dataframes.
@@ -351,7 +350,6 @@ def process_results(
         json_folder: Path to folder containing downloaded JSON files
         raw_output: Path to save raw dataframe
         post_processed_output: Path to save post-processed dataframe
-        article_output: Path to save article dataframe
         
     Returns:
         Dictionary with paths to the generated dataframes
@@ -361,7 +359,7 @@ def process_results(
         results = {}
         
         # Ensure output directories exist
-        for path in [raw_output, post_processed_output, article_output]:
+        for path in [raw_output, post_processed_output]:
             os.makedirs(os.path.dirname(path), exist_ok=True)
         
         # Step 1: Convert JSONs to raw dataframe
@@ -409,24 +407,6 @@ def process_results(
             logger.info(f"Post-processed dataframe already exists. Skipping.")
         
         results["post_processed_dataframe"] = post_processed_output
-        
-        # Step 3: Create article dataframe
-        if not os.path.exists(article_output):
-            logger.info(f"Creating article dataframe")
-            returned_docs = pd.read_parquet(post_processed_output)
-            
-            # Process documents to create articles
-            articles_df = process_documents(
-                returned_docs, batch_size=1, parallel=True, n_jobs=1
-            )
-            
-            # Save article dataframe
-            articles_df.to_parquet(article_output)
-            logger.info(f"Article dataframe saved to {article_output}")
-        else:
-            logger.info(f"Article dataframe already exists. Skipping.")
-        
-        results["article_dataframe"] = article_output
         
         return results
     

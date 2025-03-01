@@ -1,6 +1,5 @@
 from setuptools import setup
 
-setup(
-    name="my_package",
-    packages=["function_modules"],  # Only include your actual package
-)
+# This setup.py is kept for backward compatibility
+# The main configuration is now in pyproject.toml
+setup()

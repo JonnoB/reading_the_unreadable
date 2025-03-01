@@ -114,8 +114,7 @@ class NewspaperPipeline:
             self.config["download_jobs_dir"],
             os.path.join(self.config["download_jobs_dir"], "dataframes"),
             os.path.join(self.config["download_jobs_dir"], "dataframes", "raw"),
-            os.path.join(self.config["download_jobs_dir"], "dataframes", "post_processed"),
-            os.path.join(self.config["download_jobs_dir"], "dataframes", "post_processed_articles")
+            os.path.join(self.config["download_jobs_dir"], "dataframes", "post_processed")
         ]
         
         for dir_path in dirs_to_create:
@@ -283,7 +282,7 @@ class NewspaperPipeline:
         
         # Prepare paths
         bbox_path = self.state["periodicals"][periodical]["bbox_processed_path"]
-        output_folder = os.path.join(self.config["processed_jobs_dir"], "ncse")
+        output_folder = self.config["processed_jobs_dir"]
         os.makedirs(output_folder, exist_ok=True)
         output_file = os.path.join(output_folder, f"{periodical}.csv")
         
@@ -323,8 +322,7 @@ class NewspaperPipeline:
         
         # Prepare paths
         jobs_file = self.state["periodicals"][periodical]["batch_job_path"]
-        download_folder = os.path.join(self.config["download_jobs_dir"], "ncse")
-        os.makedirs(download_folder, exist_ok=True)
+        download_folder = self.config["download_jobs_dir"]
         json_folder = os.path.join(download_folder, periodical)
         os.makedirs(json_folder, exist_ok=True)
         log_file = os.path.join(download_folder, f"{periodical}.csv")
@@ -362,24 +360,21 @@ class NewspaperPipeline:
         
         # Prepare paths
         json_folder = self.state["periodicals"][periodical]["download_folder"]
-        dataframe_folder = os.path.join(self.config["download_jobs_dir"], "ncse", "dataframes")
+        dataframe_folder = os.path.join(self.config["download_jobs_dir"], "dataframes")
         raw_output = os.path.join(dataframe_folder, "raw", f"{periodical}.parquet")
         post_processed_output = os.path.join(dataframe_folder, "post_processed", f"{periodical}.parquet")
-        article_output = os.path.join(dataframe_folder, "post_processed_articles", f"{periodical}.parquet")
         
         # Delegate to the pipeline stage function
         result_paths = pipeline_stages.process_results(
             json_folder=json_folder,
             raw_output=raw_output,
-            post_processed_output=post_processed_output,
-            article_output=article_output
+            post_processed_output=post_processed_output
         )
         
         # Update pipeline state
         self.state["periodicals"][periodical].update({
             "raw_dataframe": result_paths["raw_dataframe"],
-            "post_processed_dataframe": result_paths["post_processed_dataframe"],
-            "article_dataframe": result_paths["article_dataframe"]
+            "post_processed_dataframe": result_paths["post_processed_dataframe"]
         })
         self._save_state()
         
@@ -476,8 +471,7 @@ class NewspaperPipeline:
             logger.info(f"Pipeline already completed for {periodical}")
             result_paths = {
                 "raw_dataframe": periodical_state["raw_dataframe"],
-                "post_processed_dataframe": periodical_state["post_processed_dataframe"],
-                "article_dataframe": periodical_state["article_dataframe"]
+                "post_processed_dataframe": periodical_state["post_processed_dataframe"]
             }
         
         return {

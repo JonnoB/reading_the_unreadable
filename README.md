@@ -37,6 +37,12 @@ pip install -r requirements_gpu.txt  # for full installation with GPU support
 pip install -e .
 ```
 
+In addition to the python libraries this repo also requires ImageMagick. In ubuntu this can be installed using the following command
+
+```bash
+sudo apt install imagemagick
+```
+
 ## Environment Setup
 
 If you are using the scripts which work with the original NCSE images, ensure the path to the folders is in your `.env` file.
@@ -81,6 +87,3 @@ The database produced by this project is available at [NCSE v2.0: A Dataset of O
 
 If you use this project or the code used to generate it, please cite
 [Reading the unreadable: Creating a dataset of 19th century English newspapers using image-to-text language models](https://arxiv.org/abs/2502.14901)
-
-
-_______No citation information available yet_________

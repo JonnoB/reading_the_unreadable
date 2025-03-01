@@ -376,7 +376,7 @@ def update_log(
     )
 
 
-def save_encoded_images(encoded_images, output_folder):
+def save_encoded_images(encoded_images: Dict[str, str], output_folder: Union[str, Path]) -> List[str]:
     """
     Save base64-encoded images to files.
 
@@ -418,7 +418,7 @@ def save_encoded_images(encoded_images, output_folder):
     return saved_paths
 
 
-def crop_image_to_bbox(image, bbox_dict, height, width):
+def crop_image_to_bbox(image: np.ndarray, bbox_dict: Dict[str, Union[float, str]], height: int, width: int) -> Union[Dict[str, Any], np.ndarray]:
     """
     Crops an image according to the bounding box coordinates provided in the input dictionary.
 
@@ -461,13 +461,29 @@ def crop_image_to_bbox(image, bbox_dict, height, width):
     return cropped_image
 
 
-def convert_to_pil(cv2_image):
-    """Convert CV2 image to PIL image."""
+def convert_to_pil(cv2_image: np.ndarray) -> Image.Image:
+    """
+    Convert a CV2 (numpy array) image to PIL Image format.
+    
+    Args:
+        cv2_image: Input image in CV2/numpy array format
+        
+    Returns:
+        PIL Image object converted from the input CV2 image
+    """
     return Image.fromarray(cv2.cvtColor(cv2_image, cv2.COLOR_BGR2RGB))
 
 
-def deskew_image(pil_image):
-    """Deskew a PIL image using Wand."""
+def deskew_image(pil_image: Image.Image) -> Image.Image:
+    """
+    Deskew a PIL image using the Wand library.
+    
+    Args:
+        pil_image: Input PIL Image to be deskewed
+        
+    Returns:
+        Deskewed PIL Image
+    """
     buffer = BytesIO()
     pil_image.save(buffer, format="PNG")
     buffer.seek(0)
@@ -478,8 +494,16 @@ def deskew_image(pil_image):
         return Image.open(deskewed_buffer)
 
 
-def pad_wide_image(cv2_image):
-    """Pad wide images to make them square."""
+def pad_wide_image(cv2_image: np.ndarray) -> np.ndarray:
+    """
+    Pad wide images with white borders to make them square.
+    
+    Args:
+        cv2_image: Input image in CV2/numpy array format
+        
+    Returns:
+        Padded image as numpy array with white borders added to make it square
+    """
     height, width = cv2_image.shape[:2]
     diff = width - height
     top_padding = diff // 2
@@ -496,28 +520,32 @@ def pad_wide_image(cv2_image):
     )
 
 
-def encode_pil_image(pil_image, page_id, box_page_id, segment_num, image_class):
+def encode_pil_image(
+    pil_image: Image.Image, 
+    page_id: str, 
+    box_page_id: str, 
+    segment_num: int, 
+    image_class: str
+) -> Tuple[str, Dict[str, str]]:
     """
     Encodes a PIL image to base64 format and creates a dictionary entry with image metadata.
 
     Args:
-        pil_image (PIL.Image): The PIL Image object to be encoded.
+        pil_image (PIL.Image.Image): The PIL Image object to be encoded.
         page_id (str): Identifier for the page containing the image.
         box_page_id (str): Identifier for the box/region within the page format B C R.
         segment_num (int): Segment number of the image referencing the cropped bounding box.
         image_class (str): Classification or category of the image.
 
     Returns:
-        tuple: A tuple containing:
-            - str: A unique key formatted as "{page_id}_{image_class}_{box_page_id}_segment_{segment_num}"
-            - dict: A dictionary containing:
-                - 'image': Base64 encoded string of the PNG image
-                - 'class': The image classification
+        Tuple[str, Dict[str, str]]: A tuple containing:
+            - A unique key formatted as "{page_id}_{image_class}_{box_page_id}_segment_{segment_num}"
+            - A dictionary with 'image' (base64 encoded string) and 'class' (image classification)
     """
-    buffered = BytesIO()
+    buffered: BytesIO = BytesIO()
     pil_image.save(buffered, format="PNG")
 
-    key = f"{page_id}_{image_class}_{box_page_id}_segment_{segment_num}"
+    key: str = f"{page_id}_{image_class}_{box_page_id}_segment_{segment_num}"
     return key, {
         "image": base64.b64encode(buffered.getvalue()).decode("utf-8"),
         "class": image_class,
@@ -634,15 +662,15 @@ def process_single_box(
 
 
 def crop_and_encode_boxes(
-    df, images_folder, max_ratio=1, overlap_fraction=0.2, deskew=True, crop_image=True
-):
+    df: pd.DataFrame, 
+    images_folder: str, 
+    max_ratio: float = 1, 
+    overlap_fraction: float = 0.2, 
+    deskew: bool = True, 
+    crop_image: bool = True
+) -> Dict[str, Dict[str, Union[str, Any]]]:
     """
     Process and encode image regions defined by bounding boxes in the input DataFrame.
-
-    This function handles three types of image regions:
-    1. Normal regions (1 ≤ height/width ratio ≤ max_ratio): Processed as-is
-    2. Tall regions (ratio > max_ratio): Split into overlapping segments
-    3. Wide regions (ratio < 1): Padded with white borders to make square
 
     Parameters
     ----------
@@ -657,7 +685,7 @@ def crop_and_encode_boxes(
     images_folder : str
         Path to the directory containing the source images
 
-    max_ratio : float, optional (default=1.5)
+    max_ratio : float, optional (default=1)
         Maximum allowed height-to-width ratio before splitting the image
 
     overlap_fraction : float, optional (default=0.2)
@@ -666,22 +694,18 @@ def crop_and_encode_boxes(
     deskew : bool, optional (default=True)
         Whether to apply deskewing correction to non-figure images
 
+    crop_image : bool, optional (default=True)
+        Whether to crop the image
+
     Returns
     -------
-    dict
+    Dict[str, Dict[str, Union[str, Any]]]
         Dictionary where:
         - Keys: '{page_id}_{box_page_id}_segment_{i}'
           (i=0 for unsplit images, i=0,1,2,... for split images)
         - Values: Dict containing:
           - 'image': Base64-encoded PNG string
           - 'class': Classification label (if provided in input)
-
-    Notes
-    -----
-    - Images classified as 'figure' are processed without modifications
-    - All processing is done in memory without saving to disk
-    - Invalid or empty crops are skipped with warning messages
-    - All images are encoded in PNG format for quality preservation
     """
     encoded_images = {}
 
@@ -712,7 +736,11 @@ def crop_and_encode_boxes(
     return encoded_images
 
 
-def create_jsonl_content(encoded_images, prompt_dict, max_tokens=2000):
+def create_jsonl_content(
+    encoded_images: Dict[str, Dict[str, str]], 
+    prompt_dict: Dict[str, str], 
+    max_tokens: int = 2000
+) -> str:
     """
     Create JSONL content as a string for file upload.
 
@@ -726,15 +754,15 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens=2000):
     Returns:
     str: The JSONL content as a string
     """
-    jsonl_lines = []
-    default_prompt = prompt_dict.get("text", "Describe this text")
+    jsonl_lines: List[str] = []
+    default_prompt: str = prompt_dict.get("text", "Describe this text")
 
     for image_id, image_data in encoded_images.items():
         # Get the appropriate prompt based on the image class
-        image_class = image_data.get("class", "text")
-        prompt = prompt_dict.get(image_class, default_prompt)
+        image_class: str = image_data.get("class", "text")
+        prompt: str = prompt_dict.get(image_class, default_prompt)
 
-        entry = {
+        entry: Dict[str, Union[str, Dict[str, Union[int, List[Dict[str, Union[str, Dict[str, str]]]]]]]] = {
             "custom_id": image_id,
             "body": {
                 "max_tokens": max_tokens,
@@ -758,13 +786,13 @@ def create_jsonl_content(encoded_images, prompt_dict, max_tokens=2000):
 
 
 def create_batch_job(
-    client,
-    base_filename,
-    encoded_images,
-    prompt_dict,
-    model="pixtral-12b-2409",
-    job_type="testing",
-):
+    client: Any,
+    base_filename: str,
+    encoded_images: List[Union[str, bytes]],
+    prompt_dict: Dict[str, str],
+    model: str = "pixtral-12b-2409",
+    job_type: str = "testing",
+) -> Tuple[str, str]:
     """
     Create a batch job and return job details including original filename information.
     Assumes only a single issue is being batched
@@ -772,29 +800,31 @@ def create_batch_job(
     Args:
         client: Mistral client instance
         base_filename: string of desired filename, typically the issue_id
-        encoded_images: Encoded image data
+        encoded_images: List of encoded image data
         prompt_dict: dict, mapping image classes to their specific prompts
                     e.g., {'table': 'Describe this table', 'figure': 'Describe this figure'}
                     If a class is not found in prompt_dict, uses default 'text' prompt
+        model: The model to use for the batch job
+        job_type: Type of job being created
 
     Returns:
         tuple: (job_id, original_filename)
     """
-    target_filename = f"{base_filename}.jsonl"  # The final filename we want
+    target_filename: str = f"{base_filename}.jsonl"  # The final filename we want
 
     # Create JSONL content
-    jsonl_content = create_jsonl_content(encoded_images, prompt_dict)
+    jsonl_content: str = create_jsonl_content(encoded_images, prompt_dict)
 
     # Convert string content to bytes
-    content_bytes = jsonl_content.encode("utf-8")
+    content_bytes: bytes = jsonl_content.encode("utf-8")
 
     # Upload the file using the buffer
-    batch_data = client.files.upload(
+    batch_data: Any = client.files.upload(
         file={"file_name": target_filename, "content": content_bytes}, purpose="batch"
     )
 
     # Create the job with metadata including the target filename
-    created_job = client.batch.jobs.create(
+    created_job: Any = client.batch.jobs.create(
         input_files=[batch_data.id],
         model=model,
         endpoint="/v1/chat/completions",
@@ -914,7 +944,7 @@ def process_issues_to_jobs(
     return existing_jobs_df
 
 
-def process_mistral_responses(response):
+def process_mistral_responses(response: Any) -> List[Dict[str, Any]]:
     """
     Process the raw bytes data from Mistral API responses.
 
@@ -945,11 +975,11 @@ def process_mistral_responses(response):
 
 
 def download_processed_jobs(
-    client,
-    jobs_file="data/processed_jobs.csv",
-    output_dir="data/downloaded_results",
-    log_file="data/download_log.csv",
-):
+    client: Any,
+    jobs_file: str = "data/processed_jobs.csv",
+    output_dir: str = "data/downloaded_results",
+    log_file: str = "data/download_log.csv",
+) -> Dict[str, Union[int, List[str]]]:
     """
     Download results for all processed jobs listed in the jobs file with detailed logging.
     Downloads each job's output as a JSONL file using the target filename from the jobs file.
@@ -1133,7 +1163,7 @@ def download_processed_jobs(
     return results
 
 
-def convert_returned_json_to_dataframe(json_data):
+def convert_returned_json_to_dataframe(json_data: List[Dict[str, Any]]) -> pd.DataFrame:
     """
     Turns the json of the returned data into a dataframe
 
@@ -1155,7 +1185,7 @@ def convert_returned_json_to_dataframe(json_data):
     return pd.DataFrame(extracted_data)
 
 
-def parse_filename(filename):
+def parse_filename(filename: str) -> Tuple[str, int, str]:
     """
     This function is obselete as decompose filenames has been re-factored to be vectorised over dataframes
     """
@@ -1192,7 +1222,7 @@ def parse_filename(filename):
     }
 
 
-def decompose_filenames(df):
+def decompose_filenames(df: pd.DataFrame) -> pd.DataFrame:
     """
     Decompose the 'custom_id' column in the DataFrame into its constituent parts.
     Made more robust for parallel processing.
@@ -1248,7 +1278,7 @@ def reassemble_issue_segments(jsonl_path):
 """
 
 
-def reassemble_issue_segments(jsonl_path):
+def reassemble_issue_segments(jsonl_path: str) -> pd.DataFrame:
     """
     Process a single JSON file and return a DataFrame.
     """
@@ -1282,7 +1312,11 @@ def reassemble_issue_segments(jsonl_path):
         return pd.DataFrame()
 
 
-def process_json_files(json_folder, output_path, num_workers=None):
+def process_json_files(
+    json_folder: str,
+    output_path: str,
+    num_workers: Optional[int] = None
+) -> pd.DataFrame:
     """
     Process JSON files in parallel and save as single parquet file.
 
@@ -1327,7 +1361,11 @@ def process_json_files(json_folder, output_path, num_workers=None):
     return final_df
 
 
-def delete_all_batch_files(client, api_key, limit=100):
+def delete_all_batch_files(
+    client: Any,
+    api_key: str,
+    limit: int = 100
+) -> Tuple[int, List[Dict[str, str]]]:
     """
     Delete all files associated with batch processing, handling pagination.
 

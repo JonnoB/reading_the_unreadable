@@ -787,15 +787,30 @@ def fill_column_gaps(bbox_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def postprocess_bbox(
-    df, min_height=10, width_multiplier=1.5, remove_abandon=True, fill_columns=True
-):
+    df: pd.DataFrame,
+    min_height: float = 10,
+    width_multiplier: Optional[float] = 1.5,
+    remove_abandon: bool = True,
+    fill_columns: bool = True
+) -> pd.DataFrame:
     """
     This function performs all the post-processing on the bounding boxes to clean them up after being produced by DOCLAyout-Yolo
     and to make them ready for sending image crops to the image-to-text model.
     The function assumes that the bounding boxes have been made by DocLayout-yolo. Other Yolo models may also work but this has not been tested.
-    The function is a wrapper for functions from the bbox_functions module
-
-    Files require a page_id column which uniquely identifies each page
+    The function is a wrapper for functions from the bbox_functions module.
+    
+    Args:
+        df: DataFrame containing bounding box information with required columns:
+            'filename', 'page_id', 'x1', 'x2', 'y1', 'y2', 'class'
+        min_height: Minimum height threshold for boxes after y2 adjustment
+        width_multiplier: Factor used for merging boxes within column width. If None, no merging is performed
+        remove_abandon: Whether to remove boxes classified as 'abandon'
+        fill_columns: Whether to fill gaps in columns with new boxes
+        
+    Returns:
+        DataFrame with processed bounding boxes, including additional columns:
+            'issue', 'width', 'height', 'ratio', 'center_x', 'center_y',
+            'column_number', 'page_block', 'reading_order', 'box_page_id'
     """
 
     bbox_all_df = df.copy()

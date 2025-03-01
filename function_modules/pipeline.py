@@ -11,8 +11,34 @@ import time
 import logging
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Union, Tuple, Any
+from typing import Dict, List, Optional, Union, Tuple, Any, TypedDict
 from datetime import datetime
+
+class PipelineConfig(TypedDict):
+    base_dir: str
+    input_dir: str
+    image_dir: str
+    output_dir: str
+    model_repo: str
+    model_file: str
+    bbox_raw_dir: str
+    bbox_processed_dir: str
+    processed_jobs_dir: str
+    download_jobs_dir: str
+    default_image_size: int
+    batch_size: int
+    conf_threshold: float
+    fill_columns: bool
+    deskew: bool
+    max_ratio: float
+    prompts: Dict[str, str]
+
+class PipelineState(TypedDict):
+    pipeline_id: str
+    current_stage: str
+    completed_stages: List[str]
+    periodicals: Dict[str, Any]
+    timestamp: str
 
 # Import pipeline stages module
 import function_modules.pipeline_stages as pipeline_stages
@@ -25,6 +51,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class NewspaperPipeline:
+    config: PipelineConfig
+    state: PipelineState
     """
     Pipeline for processing historical newspaper documents.
     
@@ -35,7 +63,7 @@ class NewspaperPipeline:
     to the specialized functions in pipeline_stages.py.
     """
     
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None) -> None:
         """
         Initialize the pipeline with configuration.
         
@@ -106,7 +134,7 @@ class NewspaperPipeline:
     
     def _create_directories(self) -> None:
         """Create all necessary directories for the pipeline."""
-        dirs_to_create = [
+        dirs_to_create: List[str] = [
             self.config["output_dir"],
             self.config["bbox_raw_dir"],
             self.config["bbox_processed_dir"],
@@ -163,10 +191,13 @@ class NewspaperPipeline:
     
     def _update_stage(self, stage: str) -> None:
         """
-        Update the current pipeline stage.
+        Update the current pipeline stage and completed stages list.
         
         Args:
-            stage: New stage name
+            stage: New stage name to set as current
+        
+        Note:
+            Also adds the previous stage to completed_stages if not already present
         """
         if self.state["current_stage"] not in self.state["completed_stages"]:
             self.state["completed_stages"].append(self.state["current_stage"])
@@ -195,9 +226,9 @@ class NewspaperPipeline:
         self._update_stage("predicting_boxes")
         
         # Prepare output path
-        img_size = image_size or self.config["default_image_size"]
-        output_file = f"{periodical}_{img_size}.parquet"
-        output_path = os.path.join(self.config["bbox_raw_dir"], output_file)
+        img_size: int = image_size or self.config["default_image_size"]
+        output_file: str = f"{periodical}_{img_size}.parquet"
+        output_path: str = os.path.join(self.config["bbox_raw_dir"], output_file)
         
         # Delegate to the pipeline stage function
         result_path = pipeline_stages.predict_bounding_boxes(
@@ -237,12 +268,12 @@ class NewspaperPipeline:
             raise ValueError(f"No raw bounding boxes found for {periodical}. Run predict_bounding_boxes first.")
         
         # Prepare paths
-        raw_path = self.state["periodicals"][periodical]["bbox_raw_path"]
-        fill_cols = fill_columns if fill_columns is not None else self.config["fill_columns"]
-        output_folder = self.config["bbox_processed_dir"] + "_fill" if fill_cols else self.config["bbox_processed_dir"]
+        raw_path: str = self.state["periodicals"][periodical]["bbox_raw_path"]
+        fill_cols: bool = fill_columns if fill_columns is not None else self.config["fill_columns"]
+        output_folder: str = self.config["bbox_processed_dir"] + "_fill" if fill_cols else self.config["bbox_processed_dir"]
         os.makedirs(output_folder, exist_ok=True)
-        output_file = os.path.basename(raw_path)
-        output_path = os.path.join(output_folder, output_file)
+        output_file: str = os.path.basename(raw_path)
+        output_path: str = os.path.join(output_folder, output_file)
         
         # Delegate to the pipeline stage function
         result_path = pipeline_stages.postprocess_bounding_boxes(
@@ -281,10 +312,10 @@ class NewspaperPipeline:
             raise ValueError(f"No processed bounding boxes found for {periodical}. Run postprocess_bounding_boxes first.")
         
         # Prepare paths
-        bbox_path = self.state["periodicals"][periodical]["bbox_processed_path"]
-        output_folder = self.config["processed_jobs_dir"]
+        bbox_path: str = self.state["periodicals"][periodical]["bbox_processed_path"]
+        output_folder: str = self.config["processed_jobs_dir"]
         os.makedirs(output_folder, exist_ok=True)
-        output_file = os.path.join(output_folder, f"{periodical}.csv")
+        output_file: str = os.path.join(output_folder, f"{periodical}.csv")
         
         # Delegate to the pipeline stage function
         result_path = pipeline_stages.prepare_batch_job(
@@ -321,11 +352,11 @@ class NewspaperPipeline:
             raise ValueError(f"No batch job found for {periodical}. Run prepare_batch_job first.")
         
         # Prepare paths
-        jobs_file = self.state["periodicals"][periodical]["batch_job_path"]
-        download_folder = self.config["download_jobs_dir"]
-        json_folder = os.path.join(download_folder, periodical)
+        jobs_file: str = self.state["periodicals"][periodical]["batch_job_path"]
+        download_folder: str = self.config["download_jobs_dir"]
+        json_folder: str = os.path.join(download_folder, periodical)
         os.makedirs(json_folder, exist_ok=True)
-        log_file = os.path.join(download_folder, f"{periodical}.csv")
+        log_file: str = os.path.join(download_folder, f"{periodical}.csv")
         
         # Delegate to the pipeline stage function
         result_folder = pipeline_stages.download_batch_results(
@@ -359,10 +390,10 @@ class NewspaperPipeline:
             raise ValueError(f"No downloaded results found for {periodical}. Run download_batch_results first.")
         
         # Prepare paths
-        json_folder = self.state["periodicals"][periodical]["download_folder"]
-        dataframe_folder = os.path.join(self.config["download_jobs_dir"], "dataframes")
-        raw_output = os.path.join(dataframe_folder, "raw", f"{periodical}.parquet")
-        post_processed_output = os.path.join(dataframe_folder, "post_processed", f"{periodical}.parquet")
+        json_folder: str = self.state["periodicals"][periodical]["download_folder"]
+        dataframe_folder: str = os.path.join(self.config["download_jobs_dir"], "dataframes")
+        raw_output: str = os.path.join(dataframe_folder, "raw", f"{periodical}.parquet")
+        post_processed_output: str = os.path.join(dataframe_folder, "post_processed", f"{periodical}.parquet")
         
         # Delegate to the pipeline stage function
         result_paths = pipeline_stages.process_results(

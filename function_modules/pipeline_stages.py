@@ -77,7 +77,7 @@ def predict_bounding_boxes(
         
         # Download model if needed
         logger.info(f"Downloading DocLayout-YOLO model from {model_repo}")
-        filepath = hf_hub_download(
+        filepath: str = hf_hub_download(
             repo_id=model_repo,
             filename=model_file,
         )
@@ -90,14 +90,14 @@ def predict_bounding_boxes(
             device = "cuda:0" if is_gpu_available() else "cpu"
         
         # Get image paths
-        image_paths = list(Path(image_folder).glob("*.png"))
+        image_paths: List[Path] = list(Path(image_folder).glob("*.png"))
         logger.info(f"Found {len(image_paths)} images to process")
         
-        all_detections = []
+        all_detections: List[Dict[str, Any]] = []
         
         # Process images in batches
         for i in tqdm(range(0, len(image_paths), batch_size), desc=f"Processing {periodical}"):
-            batch_paths = image_paths[i : i + batch_size]
+            batch_paths: List[Path] = image_paths[i : i + batch_size]
             
             try:
                 # Predict on batch of images
@@ -184,7 +184,7 @@ def postprocess_bounding_boxes(
         
         # Load raw bounding boxes
         logger.info(f"Post-processing bounding boxes from {input_path}")
-        bbox_df = pd.read_parquet(input_path)
+        bbox_df: pd.DataFrame = pd.read_parquet(input_path)
         
         # Add page_id
         bbox_df["page_id"] = bbox_df["filename"].str.replace(".png", "")
@@ -255,11 +255,11 @@ def prepare_batch_job(
             raise ValueError(err_msg)
         
         # Initialize client
-        client = Mistral(api_key=api_key)
+        client: Mistral = Mistral(api_key=api_key)
         
         # Load bounding box dataframe
         logger.info(f"Preparing batch job from {bbox_path}")
-        bbox_df = pd.read_parquet(bbox_path)
+        bbox_df: pd.DataFrame = pd.read_parquet(bbox_path)
         
         # Process the data
         logger.info(f"Submitting OCR batch job")
@@ -318,11 +318,11 @@ def download_batch_results(
             raise ValueError(err_msg)
             
         # Initialize client
-        client = Mistral(api_key=api_key)
+        client: Mistral = Mistral(api_key=api_key)
         
         # Download the results
         logger.info(f"Downloading batch results from {jobs_file}")
-        results = download_processed_jobs(
+        results: Dict[str, Any] = download_processed_jobs(
             client=client,
             jobs_file=jobs_file,
             output_dir=output_dir,

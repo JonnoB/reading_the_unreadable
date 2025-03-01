@@ -1,14 +1,16 @@
 from pdf2image import convert_from_path
+from typing import List, Dict, Union, Optional
 import fitz
 import os
-
+from PIL import Image
+from pdf2image import convert_from_path
 from markdown_it import MarkdownIt
 from mdit_plain.renderer import RendererPlain
 
 parser = MarkdownIt(renderer_cls=RendererPlain)
 
 
-def get_page_images_info(pdf_path):
+def get_page_images_info(pdf_path: str) -> List[Dict[str, Union[int, float, str]]]:
     """
     Get metadata about images embedded in PDF pages.
     """
@@ -72,13 +74,13 @@ def get_page_images_info(pdf_path):
 
 
 def convert_pdf_to_image(
-    pdf_path,
-    output_folder="output_images",
-    dpi=96,
-    image_format="PNG",
-    use_greyscale=True,
-    quality=85,
-):
+    pdf_path: str,
+    output_folder: str = "output_images",
+    dpi: int = 96,
+    image_format: str = "PNG",
+    use_greyscale: bool = True,
+    quality: int = 85,
+) -> List[Dict[str, Union[str, int, float]]]:
     """
     Converts each page of a PDF file into an image and saves the images to an output folder.
 

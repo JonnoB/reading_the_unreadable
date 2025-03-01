@@ -59,23 +59,41 @@ Notes:
 - Includes visualization capabilities for debugging and verification
 """
 
+from typing import Dict, List, Optional, Union, Tuple, Any, TypedDict, Callable
+from pathlib import Path
+import os
+
 import pandas as pd
 import numpy as np
 from numba import jit
-import os
 from tqdm import tqdm
 import cv2
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle, ConnectionPatch
+from matplotlib.figure import Figure
+from matplotlib.colors import ListedColormap
+import matplotlib.colors as mcolors
 
 
 @jit(nopython=True)
-def numba_fill_count(count_array, x1_adj, x2_adj, y1_adj, y2_adj):
+def numba_fill_count(
+    count_array: np.ndarray,
+    x1_adj: np.ndarray,
+    x2_adj: np.ndarray,
+    y1_adj: np.ndarray,
+    y2_adj: np.ndarray
+) -> np.ndarray:
     for i in range(len(x1_adj)):
         count_array[y1_adj[i] : y2_adj[i], x1_adj[i] : x2_adj[i]] += 1
     return count_array
 
 
-def sum_of_area(df, mask_shape, y_min, x_min):
+def sum_of_area(
+    df: pd.DataFrame,
+    mask_shape: Tuple[int, int],
+    y_min: int,
+    x_min: int
+) -> np.ndarray:
     count_array = np.zeros(mask_shape, dtype=np.int32)
 
     # Convert coordinates to numpy arrays and adjust
@@ -90,7 +108,7 @@ def sum_of_area(df, mask_shape, y_min, x_min):
     return count_array
 
 
-def calculate_article_coverage(group):
+def calculate_article_coverage(group: pd.DataFrame) -> Dict[str, int]:
     """
     Calculates the number of pixels in the page that are covered by bounding boxes
     """
@@ -111,14 +129,14 @@ def calculate_article_coverage(group):
     image_counts = sum_of_area(image_data, mask_shape, y_min, x_min)
 
     # Calculate coverage
-    text_overlap_pixels = np.sum(text_counts > 1)  # Pixels where text boxes overlap
-    text_coverage_pixels = np.sum(
+    text_overlap_pixels: int = np.sum(text_counts > 1)  # Pixels where text boxes overlap
+    text_coverage_pixels: int = np.sum(
         text_counts > 0
     )  # Total pixels covered by text (including overlap)
-    text_image_overlap = np.sum(
+    text_image_overlap: int = np.sum(
         (text_counts > 0) & (image_counts > 0)
     )  # Overlap between text and images
-    total_overlap = np.sum((text_counts + image_counts) > 1)
+    total_overlap: int = np.sum((text_counts + image_counts) > 1)
     total_covered_pixels = np.sum((text_counts + image_counts) > 0)  # Total coverage
     print_area = group["print_area"].iloc[0]
 
@@ -138,7 +156,7 @@ def calculate_article_coverage(group):
     }
 
 
-def calculate_coverage_and_overlap(df):
+def calculate_coverage_and_overlap(df: pd.DataFrame) -> pd.DataFrame:
     """
     Process the entire dataframe using a for loop with tqdm, this aggregates to page level
     """
@@ -146,12 +164,12 @@ def calculate_coverage_and_overlap(df):
     page_ids = df["page_id"].unique()
 
     # Initialize lists to store results
-    results = []
+    results: List[Dict[str, Any]] = []
 
     # Process each page_id
     for page_id in tqdm(page_ids, desc="Processing pages"):
         # Get data for this page
-        page_data = df[df["page_id"] == page_id]
+        page_data: pd.DataFrame = df[df["page_id"] == page_id]
 
         # Calculate coverage
         coverage_data = calculate_article_coverage(page_data)
@@ -161,7 +179,7 @@ def calculate_coverage_and_overlap(df):
         results.append(coverage_data)
 
     # Convert results to DataFrame at the end
-    result_df = pd.DataFrame(results)
+    result_df: pd.DataFrame = pd.DataFrame(results)
 
     result_df[["perc_print_area_overlap", "perc_print_area_coverage"]] = result_df[
         ["perc_print_area_overlap", "perc_print_area_coverage"]
@@ -170,7 +188,7 @@ def calculate_coverage_and_overlap(df):
     return result_df
 
 
-def print_area_meta(df):
+def print_area_meta(df: pd.DataFrame) -> Dict[str, float]:
     """
     calculates information about the area of the printed page
     """
@@ -185,12 +203,12 @@ def print_area_meta(df):
     return df
 
 
-def reclassify_abandon_boxes(df, top_fraction=0.1):
+def reclassify_abandon_boxes(df: pd.DataFrame, top_fraction: float = 0.1) -> pd.DataFrame:
     # Calculate the threshold line from the top of the printed area for each page
-    threshold_line = df["print_y1"] + (df["print_height"] * top_fraction)
+    threshold_line: pd.Series = df["print_y1"] + (df["print_height"] * top_fraction)
 
     # Find pages that have abandon boxes
-    pages_with_abandon = df[df["class"] == "abandon"]["page_id"].unique()
+    pages_with_abandon: np.ndarray = df[df["class"] == "abandon"]["page_id"].unique()
 
     # Only proceed with reclassification for pages that have abandon boxes
     if len(pages_with_abandon) > 0:
@@ -219,7 +237,7 @@ def reclassify_abandon_boxes(df, top_fraction=0.1):
     return df
 
 
-def assign_columns(articles_df, width_overlap_threshold=0.1):
+def assign_columns(articles_df: pd.DataFrame, width_overlap_threshold: float = 0.1) -> pd.DataFrame:
     """
     Assigns column numbers to boxes and their corresponding column edges.
 
@@ -227,9 +245,9 @@ def assign_columns(articles_df, width_overlap_threshold=0.1):
     - articles_df: DataFrame containing box coordinates and print area information
     - width_overlap_threshold: Minimum fraction of column width that needs to overlap
     """
-    articles_df["column_number"] = None
-    articles_df["c1"] = None  # Left column edge
-    articles_df["c2"] = None  # Right column edge
+    articles_df["column_number"] = None  # type: ignore
+    articles_df["c1"] = None  # type: ignore # Left column edge
+    articles_df["c2"] = None  # type: ignore # Right column edge
 
     articles_df["column_counts"] = articles_df["column_counts"].fillna(1)
 
@@ -237,15 +255,15 @@ def assign_columns(articles_df, width_overlap_threshold=0.1):
         articles_df["page_id"].unique(), desc="Assigning article columns in pages"
     ):
         # Get print area info for this page from the first row of the page
-        page_articles = articles_df[articles_df["page_id"] == page_id]
-        page_info = page_articles.iloc[0]
+        page_articles: pd.DataFrame = articles_df[articles_df["page_id"] == page_id]
+        page_info: pd.Series = page_articles.iloc[0]
 
         # fills NA values with 1, this prevents issues later in this function...
         # I hope it doesn't have some crazy knock on effect
 
         # Calculate column width and boundaries
-        column_width = page_info["print_width"] / page_info["column_counts"]
-        column_bins = np.linspace(
+        column_width: float = page_info["print_width"] / page_info["column_counts"]
+        column_bins: np.ndarray = np.linspace(
             page_info["print_x1"],
             page_info["print_x2"] + 0.001,
             int(page_info["column_counts"]) + 1,
@@ -253,23 +271,23 @@ def assign_columns(articles_df, width_overlap_threshold=0.1):
 
         # Process each box
         for idx in page_articles.index:
-            box = page_articles.loc[idx]
-            box_columns = []
+            box: pd.Series = page_articles.loc[idx]
+            box_columns: List[int] = []
 
             # Check overlap with each column
             for col_num in range(len(column_bins) - 1):
-                col_left = column_bins[col_num]
-                col_right = column_bins[col_num + 1]
+                col_left: float = column_bins[col_num]
+                col_right: float = column_bins[col_num + 1]
 
                 # Calculate overlap
-                overlap_left = max(box["x1"], col_left)
-                overlap_right = min(box["x2"], col_right)
+                overlap_left: float = max(box["x1"], col_left)
+                overlap_right: float = min(box["x2"], col_right)
 
                 if overlap_right > overlap_left:  # There is some overlap
-                    overlap_width = overlap_right - overlap_left
+                    overlap_width: float = overlap_right - overlap_left
 
                     # Check if overlap is substantial
-                    box_width = box["x2"] - box["x1"]
+                    box_width: float = box["x2"] - box["x1"]
                     if overlap_width >= (box_width * width_overlap_threshold):
                         box_columns.append(col_num + 1)  # 1-based column numbering
 
@@ -302,22 +320,22 @@ def assign_columns(articles_df, width_overlap_threshold=0.1):
     return articles_df
 
 
-def create_page_blocks(df):
+def create_page_blocks(df: pd.DataFrame) -> pd.DataFrame:
     """
     Creates page blocks based on titles (column 0) and their subsequent content.
     Assigns 0 to any boxes that don't fall into a defined block.
     """
-    df_sorted = df.copy()
+    df_sorted: pd.DataFrame = df.copy()
 
     # Initialize all page_blocks to 0
     df_sorted["page_block"] = 0
 
     # Process each page separately
     for page_id in df_sorted["page_id"].unique():
-        page_df = df_sorted[df_sorted["page_id"] == page_id]
+        page_df: pd.DataFrame = df_sorted[df_sorted["page_id"] == page_id]
 
         # Find block separators
-        block_separators = page_df[
+        block_separators: pd.DataFrame = page_df[
             (page_df["column_number"] == 0) & (page_df["class"] == "title")
         ].sort_values("center_y")
 
@@ -329,7 +347,7 @@ def create_page_blocks(df):
             df_sorted.loc[separator_idx, "page_block"] = i
 
             # Find next separator's y1 if it exists
-            next_separator_y1 = float("inf")
+            next_separator_y1: float = float("inf")
             if i < len(block_separators):
                 next_separator_y1 = block_separators.iloc[i]["y1"]
 
@@ -354,25 +372,25 @@ def create_page_blocks(df):
     return df_sorted
 
 
-def create_reading_order(df):
+def create_reading_order(df: pd.DataFrame) -> pd.DataFrame:
     """
     Creates reading order taking into account page blocks.
     Removes perfectly overlapping boxes keeping the one with higher confidence.
     """
-    df_sorted = create_page_blocks(df)
+    df_sorted: pd.DataFrame = create_page_blocks(df)
 
     # Remove perfect overlaps within same column and block
-    df_cleaned = []
+    df_cleaned: List[pd.Series] = []
     for (page_id, block, col), group in df_sorted.groupby(
         ["page_id", "page_block", "column_number"]
     ):
         # Sort by y1, center_y and confidence
-        group_sorted = group.sort_values(
+        group_sorted: pd.DataFrame = group.sort_values(
             ["center_y", "y1", "confidence"], ascending=[True, True, False]
         )
 
         # Keep track of processed boxes to remove duplicates
-        kept_boxes = []
+        kept_boxes: List[pd.Series] = []
         for _, box in group_sorted.iterrows():
             # Check if current box perfectly overlaps with any kept box
             is_duplicate = any(
@@ -403,7 +421,7 @@ def create_reading_order(df):
     return df_cleaned.sort_index()
 
 
-def calculate_overlap(box1, box2):
+def calculate_overlap(box1: pd.Series, box2: pd.Series) -> float:
     """Calculate the vertical overlap percentage between two boxes"""
     # Find the overlapping region
     overlap_start = max(box1["y1"], box2["y1"])
@@ -413,15 +431,15 @@ def calculate_overlap(box1, box2):
         return 0.0
 
     # Calculate overlap percentage relative to the smaller box
-    overlap_height = overlap_end - overlap_start
-    box1_height = box1["y2"] - box1["y1"]
-    box2_height = box2["y2"] - box2["y1"]
-    min_height = min(box1_height, box2_height)
+    overlap_height: float = overlap_end - overlap_start
+    box1_height: float = box1["y2"] - box1["y1"]
+    box2_height: float = box2["y2"] - box2["y1"]
+    min_height: float = min(box1_height, box2_height)
 
     return (overlap_height / min_height) * 100
 
 
-def merge_boxes(box1, box2):
+def merge_boxes(box1: pd.Series, box2: pd.Series) -> Dict[str, float]:
     """Merge two boxes into one"""
     return {
         "x1": min(box1["x1"], box2["x1"]),
@@ -565,12 +583,19 @@ def merge_boxes_within_column_width(df, width_multiplier=1):
     return result_df
 
 
-def adjust_y2_coordinates(df):
+def adjust_y2_coordinates(df: pd.DataFrame) -> pd.DataFrame:
     """
     Adjusts y2 coordinates for boxes within each column of each block:
     - Sets y2 to the y1 of the next box in reading order
     - Removes overlaps between boxes
     - Keeps the last box in each column unchanged
+    
+    Args:
+        df: DataFrame containing bounding box information with required columns:
+            'page_id', 'page_block', 'column_number', 'y1', 'y2'
+    
+    Returns:
+        DataFrame with adjusted y2 coordinates
     """
     # Create a copy of the dataframe
     df_adjusted = df.copy()
@@ -586,13 +611,20 @@ def adjust_y2_coordinates(df):
     return df_adjusted
 
 
-def adjust_x_coordinates(df):
+def adjust_x_coordinates(df: pd.DataFrame) -> pd.DataFrame:
     """
     Adjusts x coordinates based on column boundaries (c1 and c2):
     - If x1 > c1, sets x1 to c1
     - If x2 < c2, sets x2 to c2
     This extends boxes that are too narrow but preserves wider boxes.
     Boxes with class 'figure' are not adjusted.
+    
+    Args:
+        df: DataFrame containing bounding box information with required columns:
+            'x1', 'x2', 'c1', 'c2', 'class'
+    
+    Returns:
+        DataFrame with adjusted x coordinates
     """
     df_adjusted = df.copy()
 
@@ -614,11 +646,21 @@ def adjust_x_coordinates(df):
     return df_adjusted
 
 
-def basic_box_data(df):
+def basic_box_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Calculates the basic information about the bounding boxes on the page
+    
+    Args:
+        df: DataFrame containing bounding box information with required columns:
+            'x1', 'x2', 'y1', 'y2', 'class', 'page_id'
+    
+    Returns:
+        DataFrame with additional calculated columns:
+            'width', 'height', 'ratio', 'center_x', 'center_y',
+            'median_box_width', 'print_y1', 'print_y2', 'print_x1', 'print_x2',
+            'print_height', 'print_width', 'print_area', 'column_counts', 'column_width'
     """
-
+    df = df.copy()
     df["width"] = df["x2"] - df["x1"]
     df["height"] = df["y2"] - df["y1"]
     df["ratio"] = df["height"] / df["width"]
@@ -637,16 +679,18 @@ def basic_box_data(df):
     return df
 
 
-def fill_column_gaps(bbox_df):
+def fill_column_gaps(bbox_df: pd.DataFrame) -> pd.DataFrame:
     """
     Add bounding boxes at the top and bottom of columns where they're missing.
     Only processes pages with multiple columns and a single block.
 
     Args:
-        bbox_df (pd.DataFrame): DataFrame containing bounding box information
+        bbox_df: DataFrame containing bounding box information with required columns:
+            'page_id', 'column_number', 'page_block', 'filename', 'issue', 'class',
+            'y1', 'y2', 'x1', 'x2', 'c1', 'c2', 'reading_order'
 
     Returns:
-        pd.DataFrame: DataFrame with additional bounding boxes added
+        DataFrame with additional bounding boxes added to fill column gaps
     """
     # Create mask for eligible pages
     page_col_counts = bbox_df.groupby("page_id")["column_number"].transform("max")
@@ -837,14 +881,22 @@ def postprocess_bbox(
     return bbox_df
 
 
-def remove_duplicate_boxes(df):
+def remove_duplicate_boxes(df: pd.DataFrame) -> pd.DataFrame:
     """
     Remove duplicate bounding boxes from the DataFrame.
+    
     Duplicates are defined as boxes with the same class, coordinates, and image.
-    This function is primarliy used for creating a dataset to be used for fine-tuning.
+    This function is primarily used for creating a dataset to be used for fine-tuning.
     It is likely (but not certain) the majority of the overlapping boxes are of class "abandon",
-    or title, as these two classes are created duriing.
-    post-processing and are the classes presenting the most issues
+    or title, as these two classes are created during post-processing and are the classes
+    presenting the most issues.
+    
+    Args:
+        df: DataFrame containing bounding box information with required columns:
+            'filename', 'class', 'x1', 'x2', 'y1', 'y2', 'page_width', 'page_height'
+    
+    Returns:
+        DataFrame with duplicate bounding boxes removed
     """
     # Calculate normalized coordinates
     df = df.copy()
@@ -898,26 +950,27 @@ def remove_duplicate_boxes(df):
     return df
 
 
-def plot_boxes_on_image(df, image_path, figsize=(15, 15), show_reading_order=False):
+def plot_boxes_on_image(
+    df: pd.DataFrame, 
+    image_path: Union[str, Path], 
+    figsize: Tuple[int, int] = (15, 15), 
+    show_reading_order: bool = False
+) -> Figure:
     """
     Plot bounding boxes and their classifications on a page image with optional reading order visualization.
 
     Parameters:
     -----------
-    df : pandas.DataFrame
-        DataFrame containing bounding box coordinates and classifications.
+    df: DataFrame containing bounding box coordinates and classifications.
         Required columns: 'x1', 'y1', 'x2', 'y2', 'class'
         Optional column: 'reading_order' (if show_reading_order=True)
 
-    image_path : str
-        Path to the input image file.
+    image_path: Path to the input image file.
 
-    figsize : tuple, optional (default=(15,15))
-        Figure size in inches (width, height).
+    figsize: Figure size in inches (width, height). Default is (15,15).
 
-    show_reading_order : bool, optional (default=False)
-        If True, draws arrows between boxes indicating reading order sequence.
-        Requires 'reading_order' column in the DataFrame.
+    show_reading_order: If True, draws arrows between boxes indicating reading order sequence.
+        Requires 'reading_order' column in the DataFrame. Default is False.
 
     Returns:
     --------
@@ -935,7 +988,7 @@ def plot_boxes_on_image(df, image_path, figsize=(15, 15), show_reading_order=Fal
     - A legend is included showing all class types and their corresponding colors.
     """
     # Read the image
-    image = cv2.imread(image_path)
+    image = cv2.imread(str(image_path))
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # Convert BGR to RGB
 
     # Create figure and axes
@@ -1027,16 +1080,29 @@ def plot_boxes_on_image(df, image_path, figsize=(15, 15), show_reading_order=Fal
     return fig  # Return the figure instead of showing it
 
 
-# And then the loop function would be:
 def save_plots_for_all_files(
-    df, image_dir, output_dir, figsize=(15, 15), show_reading_order=False
-):
-    os.makedirs(output_dir, exist_ok=True)
+    df: pd.DataFrame, 
+    image_dir: Union[str, Path], 
+    output_dir: Union[str, Path], 
+    figsize: Tuple[int, int] = (15, 15), 
+    show_reading_order: bool = False
+) -> None:
+    """
+    Save visualization plots for all image files in the dataframe.
+    
+    Args:
+        df: DataFrame containing bounding box information with required column 'filename'
+        image_dir: Directory containing source images
+        output_dir: Directory where generated plots will be saved
+        figsize: Figure size in inches (width, height). Default is (15,15).
+        show_reading_order: Whether to show reading order with arrows. Default is False.
+    """
+    os.makedirs(str(output_dir), exist_ok=True)
     unique_images = df["filename"].unique()
 
     for filename in tqdm(unique_images, desc="Processing images"):
         image_df = df[df["filename"] == filename]
-        image_path = os.path.join(image_dir, filename)
+        image_path = os.path.join(str(image_dir), filename)
 
         # Get the figure from plot_boxes_on_image
         fig = plot_boxes_on_image(
@@ -1044,6 +1110,6 @@ def save_plots_for_all_files(
         )
 
         # Save the figure
-        output_path = os.path.join(output_dir, f"annotated_{filename}")
+        output_path = os.path.join(str(output_dir), f"annotated_{filename}")
         fig.savefig(output_path, bbox_inches="tight", dpi=300)
         plt.close(fig)  # Close the figure to free memory

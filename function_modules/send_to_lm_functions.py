@@ -9,6 +9,8 @@ import datetime
 import time
 from tqdm import tqdm
 import cv2
+import numpy as np
+from typing import Dict, Any, List, Tuple, Optional, Union, Callable, TypedDict, cast, Iterator
 
 import base64
 import difflib
@@ -24,11 +26,24 @@ import requests
 
 from concurrent.futures import ProcessPoolExecutor
 import multiprocessing
+from pathlib import Path
 
 
-def convert_returned_streaming_to_dataframe(response, id=None, custom_id=None):
+def convert_returned_streaming_to_dataframe(
+    response: litellm.ModelResponse, 
+    id: Optional[str] = None, 
+    custom_id: Optional[str] = None
+) -> pd.DataFrame:
     """
     Process a single API response and return it in DataFrame format
+    
+    Args:
+        response: The response object from the LLM API call
+        id: Optional identifier for the request
+        custom_id: Optional custom identifier for the request
+        
+    Returns:
+        A pandas DataFrame containing the structured response data
     """
     extracted_data = [
         {
@@ -46,7 +61,11 @@ def convert_returned_streaming_to_dataframe(response, id=None, custom_id=None):
 
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
-def process_image_with_api(image_base64, prompt, model="mistral/pixtral-12b-2409"):
+def process_image_with_api(
+    image_base64: str, 
+    prompt: str, 
+    model: str = "mistral/pixtral-12b-2409"
+) -> litellm.ModelResponse:
     """
     Process an image using an AI model API to extract information based on a given prompt.
 
@@ -54,12 +73,12 @@ def process_image_with_api(image_base64, prompt, model="mistral/pixtral-12b-2409
     which analyzes the image according to the provided prompt and returns a response.
 
     Args:
-        image_base64 (str): A base64-encoded string representation of the image.
-        prompt (str): The text prompt instructing the model how to analyze the image.
-        model (str, optional): The name of the AI model to use. Defaults to "mistral/pixtral-12b-2409".
+        image_base64: A base64-encoded string representation of the image.
+        prompt: The text prompt instructing the model how to analyze the image.
+        model: The name of the AI model to use. Defaults to "mistral/pixtral-12b-2409".
 
     Returns:
-        litellm.ModelResponse: The complete response object from the API containing:
+        The complete response object from the API containing:
             - choices: List of completion choices
             - model: The model used
             - usage: Token usage statistics
@@ -134,7 +153,7 @@ def knit_strings(s1: str, s2: str) -> str:
     return result
 
 
-def knit_string_list(content_list: list) -> str:
+def knit_string_list(content_list: List[str]) -> str:
     """
     Knit a list of strings together based on their longest common substrings.
 
@@ -142,10 +161,10 @@ def knit_string_list(content_list: list) -> str:
     combining them based on their longest common substrings.
 
     Args:
-        content_list (list): A list of strings to be knitted together.
+        content_list: A list of strings to be knitted together.
 
     Returns:
-        str: A new string combining all strings in the list.
+        A new string combining all strings in the list.
 
     Example:
         >>> knit_string_list(["Hello world", "world of Python", "Python is great"])
@@ -161,19 +180,24 @@ def knit_string_list(content_list: list) -> str:
     return result
 
 
-def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=20):
+def split_image(
+    image: Image.Image, 
+    max_ratio: float = 1.5, 
+    overlap_fraction: float = 0.2, 
+    max_segments: int = 20
+) -> List[Image.Image]:
     """
     Split an image into segments based on a maximum aspect ratio.
     The final segment will maintain the same ratio as other segments.
 
     Args:
         image: PIL Image object
-        max_ratio (float): Maximum width-to-height ratio before splitting
-        overlap_fraction (float): Fraction of overlap between segments
-        max_segments (int): Maximum number of segments to create
+        max_ratio: Maximum width-to-height ratio before splitting
+        overlap_fraction: Fraction of overlap between segments
+        max_segments: Maximum number of segments to create
 
     Returns:
-        list: List of PIL Image objects (segments)
+        List of PIL Image objects (segments)
     """
     width, height = image.size
     current_ratio = height / width
@@ -186,7 +210,7 @@ def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=20):
     segment_height = int(width * max_ratio)
     overlap_pixels = int(segment_height * overlap_fraction)
 
-    segments = []
+    segments: List[Image.Image] = []
     y_start = 0
 
     while y_start < height and len(segments) < max_segments:
@@ -219,19 +243,19 @@ def split_image(image, max_ratio=1.5, overlap_fraction=0.2, max_segments=20):
     return segments
 
 
-def initialize_log_file(output_folder):
+def initialize_log_file(output_folder: Union[str, Path]) -> Tuple[str, pd.DataFrame]:
     """
     Initialize or load an existing log file for tracking image processing results.
 
     Args:
-        output_folder (str): Path to the folder where the log file will be stored.
+        output_folder: Path to the folder where the log file will be stored.
 
     Returns:
-        tuple: A tuple containing:
-            - str: Path to the log file
-            - pandas.DataFrame: DataFrame containing the log entries
+        A tuple containing:
+            - Path to the log file
+            - DataFrame containing the log entries
     """
-    log_file_path = os.path.join(output_folder, "processing_log.csv")
+    log_file_path = os.path.join(str(output_folder), "processing_log.csv")
     if os.path.exists(log_file_path):
         log_df = pd.read_csv(log_file_path)
     else:
@@ -250,17 +274,17 @@ def initialize_log_file(output_folder):
     return log_file_path, log_df
 
 
-def combine_article_segments(df):
+def combine_article_segments(df: pd.DataFrame) -> pd.DataFrame:
     """
     Process DataFrame by grouping and knitting text within groups, including segment counts and token information.
 
     Args:
-        df (pandas.DataFrame): Input DataFrame with columns 'issue_id', 'page_number',
-                             'block', 'column_number', 'reading_order', 'segment', 'text',
-                             'prompt_tokens', 'completion_tokens', 'total_tokens'
+        df: Input DataFrame with columns 'issue_id', 'page_number',
+            'block', 'column', 'reading_order', 'segment', 'content',
+            'prompt_tokens', 'completion_tokens', 'total_tokens'
 
     Returns:
-        pandas.DataFrame: Processed DataFrame with knitted text and aggregated metrics
+        Processed DataFrame with knitted text and aggregated metrics
     """
     # Create a copy of the input DataFrame
     df = df.copy()
@@ -271,7 +295,7 @@ def combine_article_segments(df):
     )
 
     # Function to process each group
-    def knit_group_texts(group):
+    def knit_group_texts(group: pd.DataFrame) -> pd.Series:
         text_list = group["content"].tolist()
         knitted_text = knit_string_list(text_list)
 
@@ -310,30 +334,30 @@ def combine_article_segments(df):
 
 
 def update_log(
-    log_df,
-    filename,
-    processing_time,
-    total_input_tokens,
-    total_output_tokens,
-    total_tokens,
-    sub_images,
-    status,
-):
+    log_df: pd.DataFrame,
+    filename: str,
+    processing_time: float,
+    total_input_tokens: int,
+    total_output_tokens: int,
+    total_tokens: int,
+    sub_images: int,
+    status: str,
+) -> pd.DataFrame:
     """
     Update the processing log with new entry information.
 
     Args:
-        log_df (pandas.DataFrame): Existing log DataFrame.
-        filename (str): Name of the processed file.
-        processing_time (float): Time taken to process the image.
-        total_input_tokens (int): Number of input tokens used.
-        total_output_tokens (int): Number of output tokens used.
-        total_tokens (int): Total number of tokens used.
-        sub_images (int): Number of image segments processed.
-        status (str): Processing status ('Success' or 'Failed').
+        log_df: Existing log DataFrame.
+        filename: Name of the processed file.
+        processing_time: Time taken to process the image.
+        total_input_tokens: Number of input tokens used.
+        total_output_tokens: Number of output tokens used.
+        total_tokens: Total number of tokens used.
+        sub_images: Number of image segments processed.
+        status: Processing status ('Success' or 'Failed').
 
     Returns:
-        pandas.DataFrame: Updated log DataFrame.
+        Updated log DataFrame.
     """
     log_entry = pd.DataFrame(
         {
@@ -501,8 +525,15 @@ def encode_pil_image(pil_image, page_id, box_page_id, segment_num, image_class):
 
 
 def process_single_box(
-    image, row, height, width, max_ratio, overlap_fraction, deskew, crop_image=True
-):
+    image: np.ndarray,
+    row: Dict[str, Any],
+    height: int,
+    width: int,
+    max_ratio: float,
+    overlap_fraction: float,
+    deskew: bool,
+    crop_image: bool = True
+) -> Dict[str, Dict[str, str]]:
     """
     Process a single bounding box from an image by cropping, deskewing, and encoding it based on specific criteria.
 

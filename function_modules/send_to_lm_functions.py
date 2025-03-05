@@ -25,6 +25,9 @@ from io import BytesIO
 import requests
 
 from concurrent.futures import ProcessPoolExecutor
+import concurrent.futures
+from functools import partial
+from typing import Any, Dict, List, Optional, Set, Tuple, TypedDict, Union
 import multiprocessing
 from pathlib import Path
 
@@ -834,30 +837,145 @@ def create_batch_job(
     return created_job.id, target_filename
 
 
-def process_issues_to_jobs(
-    bbox_df,
-    images_folder,
-    prompt_dict,
-    client,
-    output_file="data/processed_jobs.csv",
-    deskew=True,
-    crop_image=True,
-    max_ratio=1,
-    model="pixtral-12b-2409",
-):
+
+class IssueResult(TypedDict):
+    """Type definition for result of issue processing."""
+    issue: str
+    job_id: Optional[str]
+    target_filename: Optional[str]
+    success: bool
+    error: Optional[str]
+
+
+def _process_single_issue(
+    issue_id: str,
+    bbox_df: pd.DataFrame,
+    images_folder: str,
+    prompt_dict: Dict[str, str],
+    client: Any,
+    deskew: bool,
+    crop_image: bool,
+    max_ratio: float,
+    model: str
+) -> IssueResult:
     """
-    Process periodical issues one at a time, creating batch jobs for OCR processing
+    Process a single issue to create a batch job.
+    
+    Parameters:
+    ----------
+    issue_id : str
+        Identifier for the issue to process
+    bbox_df : pd.DataFrame
+        DataFrame containing bounding box information for all issues
+    images_folder : str
+        Path to folder containing images
+    prompt_dict : Dict[str, str]
+        Mapping of image classes to their specific prompts
+    client : Any
+        API client instance
+    deskew : bool
+        Whether to deskew images
+    crop_image : bool
+        Whether to crop images
+    max_ratio : float
+        Maximum aspect ratio for image processing
+    model : str
+        Model name to use for processing
+        
+    Returns:
+    -------
+    IssueResult
+        Dictionary containing processing result information
+    """
+    try:
+        # Filter bbox_df for current issue
+        issue_df = bbox_df[bbox_df["issue"] == issue_id]
+        
+        # Encode images for this issue
+        encoded_images = crop_and_encode_boxes(
+            df=issue_df,
+            images_folder=images_folder,
+            max_ratio=max_ratio,
+            overlap_fraction=0.2,
+            deskew=deskew,
+            crop_image=crop_image,
+        )
+
+        # Create batch job
+        job_id, target_filename = create_batch_job(
+            client,
+            issue_id,
+            encoded_images,
+            prompt_dict,
+            model=model,
+        )
+
+        return {
+            "issue": issue_id,
+            "job_id": job_id,
+            "target_filename": target_filename,
+            "success": True,
+            "error": None
+        }
+    except Exception as e:
+        return {
+            "issue": issue_id,
+            "job_id": None,
+            "target_filename": None,
+            "success": False,
+            "error": str(e)
+        }
+
+
+def process_issues_to_jobs(
+    bbox_df: pd.DataFrame,
+    images_folder: str,
+    prompt_dict: Dict[str, str],
+    client: Any,
+    output_file: str = "data/processed_jobs.csv",
+    deskew: bool = True,
+    crop_image: bool = True,
+    max_ratio: float = 1.0,
+    model: str = "pixtral-12b-2409",
+    max_workers: int = 4,  # Number of parallel workers
+) -> pd.DataFrame:
+    """
+    Process periodical issues in parallel, creating batch jobs for OCR processing
 
     Parameters:
-    bbox_df (DataFrame): DataFrame containing bounding box information
-    images_folder (str): Path to folder containing images
-    prompt_dict: dict, mapping image classes to their specific prompts
-            e.g., {'table': 'Describe this table', 'figure': 'Describe this figure'}
-            If a class is not found in prompt_dict, uses default 'text' prompt
-    client: API client instance
-    output_file (str): Path to CSV file storing job information
+    -----------
+    bbox_df : pd.DataFrame
+        DataFrame containing bounding box information
+    images_folder : str
+        Path to folder containing images
+    prompt_dict : Dict[str, str]
+        Mapping of image classes to their specific prompts
+    client : Any
+        API client instance
+    output_file : str, optional
+        Path to CSV file storing job information, by default "data/processed_jobs.csv"
+    deskew : bool, optional
+        Whether to deskew images, by default True
+    crop_image : bool, optional
+        Whether to crop images, by default True
+    max_ratio : float, optional
+        Maximum aspect ratio for image processing, by default 1.0
+    model : str, optional
+        Model name to use for processing, by default "pixtral-12b-2409"
+    max_workers : int, optional
+        Number of parallel workers, by default 4
+        
     Returns:
-    DataFrame: DataFrame containing job_ids and target filenames
+    --------
+    pd.DataFrame
+        DataFrame containing job_ids and target filenames
+        
+    Raises:
+    -------
+    FileNotFoundError
+        If the images folder doesn't exist
+    ValueError
+        If prompt_dict is invalid
     """
 
     if not os.path.exists(images_folder):
@@ -877,66 +995,80 @@ def process_issues_to_jobs(
         existing_jobs_df = pd.DataFrame(columns=["issue", "job_id", "target_filename"])
         print("Creating new jobs tracking file")
 
-    # Get unique issue_ids
-    unique_issues = bbox_df["issue"].unique()
+    # Get unique issue_ids and filter processed issues
+    unique_issues: np.ndarray = bbox_df["issue"].unique()
+    processed_issues: Set[str] = set(existing_jobs_df["issue"].values)
+    issues_to_process: List[str] = [issue for issue in unique_issues if issue not in processed_issues]
+    
+    print(f"Found {len(issues_to_process)} issues to process")
 
-    # Counter for saving frequency
-    processed_since_save = 0
-
-    for issue_id in tqdm(unique_issues, desc="Processing issues"):
-        # Filter bbox_df for current issue
-        issue_df = bbox_df[bbox_df["issue"] == issue_id]
-
-        # Check if this issue has already been processed
-        if issue_id in existing_jobs_df["issue"].values:
-            # print(f"Skipping issue {issue_id} - already processed")
-            continue
-
-        try:
-            # Encode images for this issue
-            encoded_images = crop_and_encode_boxes(
-                df=issue_df,
-                images_folder=images_folder,
-                max_ratio=max_ratio,
-                overlap_fraction=0.2,
-                deskew=deskew,
-                crop_image=crop_image,
-            )
-
-            # Create batch job
-            job_id, target_filename = create_batch_job(
-                client,
-                issue_id,
-                encoded_images,
-                prompt_dict,
-                model=model,
-            )
-
-            # Add results to DataFrame
-            new_row = pd.DataFrame(
-                {
-                    "issue": [issue_id],
-                    "job_id": [job_id],
-                    "target_filename": [target_filename],
-                }
-            )
-            existing_jobs_df = pd.concat([existing_jobs_df, new_row], ignore_index=True)
-
-            # Save to file every 5 processed issues
-            processed_since_save += 1
-            if processed_since_save >= 5:
-                existing_jobs_df.to_csv(output_file, index=False)
-                processed_since_save = 0
-                # print(f"Saved progress to {output_file}")
-
-            # print(f"Successfully processed page_id {issue_id}")
-
-        except Exception as e:
-            print(f"Error processing page_id {issue_id}: {str(e)}")
-            # Save progress in case of error
-            existing_jobs_df.to_csv(output_file, index=False)
-            continue
-
+    # Create a partial function with fixed arguments
+    process_func = partial(
+        _process_single_issue,
+        bbox_df=bbox_df,
+        images_folder=images_folder,
+        prompt_dict=prompt_dict,
+        client=client,
+        deskew=deskew,
+        crop_image=crop_image,
+        max_ratio=max_ratio,
+        model=model
+    )
+    
+    # Process issues in parallel
+    results: List[IssueResult] = []
+    
+    # Create a progress bar with the total number of issues to process
+    with tqdm(total=len(issues_to_process), desc="Processing issues") as pbar:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks
+            future_to_issue: Dict[concurrent.futures.Future, str] = {
+                executor.submit(process_func, issue_id): issue_id 
+                for issue_id in issues_to_process
+            }
+            
+            # Process results as they complete
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_issue)):
+                issue_id: str = future_to_issue[future]
+                result: IssueResult = future.result()
+                results.append(result)
+                
+                # Update progress bar
+                pbar.update(1)
+                
+                # Add result status to progress bar description
+                if result["success"]:
+                    pbar.set_postfix(issue=issue_id, status="Success")
+                else:
+                    pbar.set_postfix(issue=issue_id, status="Failed")
+                
+                # Log errors
+                if not result["success"]:
+                    pbar.write(f"\nError processing issue {issue_id}: {result['error']}")
+                
+                # Save progress every max_workers completed issues
+                if (i + 1) % max_workers == 0:
+                    # Create a dataframe from successful results
+                    new_rows = pd.DataFrame(
+                        [r for r in results if r["success"]], 
+                        columns=["issue", "job_id", "target_filename"]
+                    )
+                    existing_jobs_df = pd.concat([existing_jobs_df, new_rows], ignore_index=True)
+                    existing_jobs_df.to_csv(output_file, index=False)
+                    
+                    # Only display save message without disrupting the progress bar too much
+                    pbar.write(f"Saved progress ({i+1}/{len(issues_to_process)} issues processed)")
+                    
+                    # Clear only the successful results we just saved
+                    results = [r for r in results if not r["success"]]
+    
+    # Final processing of results
+    new_rows = pd.DataFrame(
+        [r for r in results if r["success"]], 
+        columns=["issue", "job_id", "target_filename"]
+    )
+    existing_jobs_df = pd.concat([existing_jobs_df, new_rows], ignore_index=True)
+    
     # Final save
     existing_jobs_df.to_csv(output_file, index=False)
     print(f"Processing complete. Final results saved to {output_file}")

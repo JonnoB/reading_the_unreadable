@@ -1,0 +1,17 @@
+LICENSE
+README.md
+pyproject.toml
+setup.py
+function_modules/__init__.py
+function_modules/analysis_functions.py
+function_modules/bbox_functions.py
+function_modules/pipeline.py
+function_modules/pipeline_stages.py
+function_modules/send_to_lm_functions.py
+function_modules/text_classification.py
+function_modules/util_funcs.py
+reading_the_unreadable.egg-info/PKG-INFO
+reading_the_unreadable.egg-info/SOURCES.txt
+reading_the_unreadable.egg-info/dependency_links.txt
+reading_the_unreadable.egg-info/requires.txt
+reading_the_unreadable.egg-info/top_level.txt

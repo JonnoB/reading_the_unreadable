@@ -221,7 +221,8 @@ def prepare_batch_job(
     prompt_dict: Dict[str, str],
     api_key: Optional[str] = None,
     deskew: bool = False,
-    max_ratio: float = 1.5
+    max_ratio: float = 1.5,
+    max_workers: int = 4
 ) -> str:
     """
     Prepare and submit batch jobs for OCR processing.
@@ -271,6 +272,7 @@ def prepare_batch_job(
             output_file=output_file,
             deskew=deskew,
             max_ratio=max_ratio,
+            max_workers=max_workers
         )
         
         logger.info(f"Batch job prepared and submitted. Details saved to {output_file}")

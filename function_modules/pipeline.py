@@ -88,6 +88,7 @@ class NewspaperPipeline:
             "fill_columns": True,
             "deskew": False,
             "max_ratio": 1.5,
+            "max_workers": 4,
             "prompts": {
                 "text": "The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.",
                 "figure": "Please describe the graphic taken from a 19th century English newspaper. Do not add additional commentary",
@@ -325,7 +326,8 @@ class NewspaperPipeline:
             prompt_dict=self.config["prompts"],
             api_key=api_key,
             deskew=self.config["deskew"],
-            max_ratio=self.config["max_ratio"]
+            max_ratio=self.config["max_ratio"],
+            max_workers=self.config["max_workers"]
         )
         
         # Update pipeline state

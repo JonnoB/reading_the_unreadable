@@ -51,19 +51,23 @@ def get_or_create_pipeline() -> Tuple[NewspaperPipeline, bool]:
         
     return pipeline, True
 
-def process_folder(folder_path: str, api_key: Optional[str] = None) -> None:
+def process_folder(folder_path: str, api_key: Optional[str] = None, max_workers: int = 4) -> None:
     """
     Process all newspaper images in the specified folder.
     
     Args:
         folder_path: Path to the folder containing newspaper images
         api_key: Optional Mistral API key (defaults to environment variable)
+        max_workers: Number of parallel workers for batch processing (default: 4)
     """
     # Get or create pipeline
     pipeline, is_new_pipeline = get_or_create_pipeline()
     
     # Use the folder name as the periodical name
     periodical = os.path.basename(folder_path)
+    
+    # Update the max_workers in the pipeline config
+    pipeline.config["max_workers"] = max_workers
     
     if not is_new_pipeline:
         print(f"Resuming pipeline {pipeline.state['pipeline_id']}")
@@ -77,6 +81,8 @@ def process_folder(folder_path: str, api_key: Optional[str] = None) -> None:
             print("Starting new pipeline run...")
             # Create a fresh pipeline for the new run
             pipeline = NewspaperPipeline()
+            # Set max_workers in the fresh pipeline
+            pipeline.config["max_workers"] = max_workers
     
     # Start a new pipeline run
     pipeline.run_pipeline(
@@ -95,6 +101,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process newspaper images using the pipeline")
     parser.add_argument("folder", help="Path to the folder containing newspaper images")
     parser.add_argument("--api-key", help="Mistral API key (optional, defaults to environment variable)")
+    parser.add_argument("--max-workers", type=int, default=4, 
+                       help="Number of parallel workers for batch processing (default: 4)")
     
     args = parser.parse_args()
     
@@ -103,4 +111,4 @@ if __name__ == "__main__":
         print(f"Error: {args.folder} is not a valid directory")
         exit(1)
         
-    process_folder(args.folder, args.api_key)
+    process_folder(args.folder, args.api_key, args.max_workers)

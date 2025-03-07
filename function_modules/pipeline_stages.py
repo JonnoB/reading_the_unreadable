@@ -221,6 +221,7 @@ def prepare_batch_job(
     prompt_dict: Dict[str, str],
     api_key: Optional[str] = None,
     deskew: bool = False,
+    model: str = "pixtral-12b-2409",
     max_ratio: float = 1.5,
     max_workers: int = 4
 ) -> str:
@@ -272,6 +273,7 @@ def prepare_batch_job(
             output_file=output_file,
             deskew=deskew,
             max_ratio=max_ratio,
+            model=model,
             max_workers=max_workers
         )
         

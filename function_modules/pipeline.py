@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Union, Tuple, Any, TypedDict
 from datetime import datetime
 
 class PipelineConfig(TypedDict):
+    """Configuration for the pipeline"""
     base_dir: str
     input_dir: str
     image_dir: str
@@ -31,6 +32,8 @@ class PipelineConfig(TypedDict):
     fill_columns: bool
     deskew: bool
     max_ratio: float
+    max_workers: int
+    model: str
     prompts: Dict[str, str]
 
 class PipelineState(TypedDict):
@@ -88,6 +91,7 @@ class NewspaperPipeline:
             "fill_columns": True,
             "deskew": False,
             "max_ratio": 1.5,
+            "model": "pixtral-12b-2409",
             "max_workers": 4,
             "prompts": {
                 "text": "The text in the image is from a 19th century English newspaper, please transcribe the text including linebreaks. Do not use markdown use plain text only. Do not add any commentary.",
@@ -327,6 +331,7 @@ class NewspaperPipeline:
             api_key=api_key,
             deskew=self.config["deskew"],
             max_ratio=self.config["max_ratio"],
+            model=self.config["model"],
             max_workers=self.config["max_workers"]
         )
         

@@ -51,7 +51,7 @@ def get_or_create_pipeline() -> Tuple[NewspaperPipeline, bool]:
         
     return pipeline, True
 
-def process_folder(folder_path: str, api_key: Optional[str] = None, max_workers: int = 4) -> None:
+def process_folder(folder_path: str, api_key: Optional[str] = None, max_workers: int = 4, model: str = "pixtral-12b-2409") -> None:
     """
     Process all newspaper images in the specified folder.
     
@@ -68,6 +68,7 @@ def process_folder(folder_path: str, api_key: Optional[str] = None, max_workers:
     
     # Update the max_workers in the pipeline config
     pipeline.config["max_workers"] = max_workers
+    pipeline.config["model"] = model
     
     if not is_new_pipeline:
         print(f"Resuming pipeline {pipeline.state['pipeline_id']}")
@@ -83,6 +84,7 @@ def process_folder(folder_path: str, api_key: Optional[str] = None, max_workers:
             pipeline = NewspaperPipeline()
             # Set max_workers in the fresh pipeline
             pipeline.config["max_workers"] = max_workers
+            pipeline.config["model"] = model
     
     # Start a new pipeline run
     pipeline.run_pipeline(
@@ -103,6 +105,7 @@ if __name__ == "__main__":
     parser.add_argument("--api-key", help="Mistral API key (optional, defaults to environment variable)")
     parser.add_argument("--max-workers", type=int, default=4, 
                        help="Number of parallel workers for batch processing (default: 4)")
+    parser.add_argument("--model", default="pixtral-12b-2409", help="Model to use for OCR processing")
     
     args = parser.parse_args()
     
@@ -111,4 +114,4 @@ if __name__ == "__main__":
         print(f"Error: {args.folder} is not a valid directory")
         exit(1)
         
-    process_folder(args.folder, args.api_key, args.max_workers)
+    process_folder(args.folder, args.api_key, args.max_workers, args.model)

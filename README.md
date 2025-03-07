@@ -1,5 +1,9 @@
-# Ereading the unreadable
-This repository is to convert scanned images of 19th century newspapers into an indexed and classified data collection. The results of this project are discussed in the paper "Reading the unreadable: Creating a dataset of 19th century English newspapers using image-to-text language models".
+<a target="_blank" href="https://lightning.ai/ucabbou/studios/reading-the-unreadable">
+  <img src="https://pl-bolts-doc-images.s3.us-east-2.amazonaws.com/app-2/studio-badge.svg" alt="Open In Studio"/>
+</a>
+
+# Reading the Unreadable
+This repository is to convert scanned images of 19th century newspapers into an indexed and classified data collection. The results of this project are discussed in the paper "Reading the unreadable: Creating a dataset of 19th century English newspapers using image-to-text language models". Click on the purple lightnin.ai badge above to open a demo.
 
 The project is an evolution of [CLOCR-C](https://github.com/JonnoB/clocrc), [ScrambledText](https://github.com/JonnoB/scrambledtext_analysis), and the hackathon project [Archivstral](https://github.com/JonnoB/archivestal). It is an attempt to re-frame OCR as an Language Model tast, as well as provide, a substantial new searchable data collection of 19th century English Newspapers
 
@@ -73,7 +77,7 @@ Each element of the project pipeline has a python script for execution. However,
 The scripts and ipynb to measure the performance of the alternative models can be found in the "alternative_models" folder
 
 # To Do
-- Create lightning example using non-batch and batch pipeline
+- Allow for other models to be used.
 
 # Note
 - The code is written in a mixture of marimo and regular .py files. This is because although marimo is preferred for it's ease of reporducibility, the GPU acitivity was performed on lightning.ai which is focused on .ipynb based code or simple .py scripts.

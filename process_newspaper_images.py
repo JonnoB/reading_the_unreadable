@@ -59,6 +59,7 @@ def process_folder(folder_path: str, api_key: Optional[str] = None, max_workers:
         folder_path: Path to the folder containing newspaper images
         api_key: Optional Mistral API key (defaults to environment variable)
         max_workers: Number of parallel workers for batch processing (default: 4)
+        model: The mistral model to use for OCR (default pixtral-12b-2409)
     """
     # Get or create pipeline
     pipeline, is_new_pipeline = get_or_create_pipeline()

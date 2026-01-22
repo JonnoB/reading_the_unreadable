@@ -5,7 +5,7 @@
 # Reading the Unreadable
 This repository is to convert scanned images of 19th century newspapers into an indexed and classified data collection. The results of this project are discussed in the paper "Reading the unreadable: Creating a dataset of 19th century English newspapers using image-to-text language models". Click on the purple lightnin.ai badge above to open a demo.
 
-The project is an evolution of [CLOCR-C](https://github.com/JonnoB/clocrc), [ScrambledText](https://github.com/JonnoB/scrambledtext_analysis), and the hackathon project [Archivstral](https://github.com/JonnoB/archivestal). It is an attempt to re-frame OCR as an Language Model tast, as well as provide, a substantial new searchable data collection of 19th century English Newspapers
+The project is an evolution of [CLOCR-C](https://github.com/JonnoB/clocrc), [ScrambledText](https://doi.org/10.1007/s10032-025-00522-0), . It is an attempt to re-frame OCR as an Language Model task, as well as provide, a substantial new searchable data collection of 19th century English Newspapers
 
 ## Abstract
 
@@ -90,4 +90,4 @@ The database produced by this project is available at [NCSE v2.0: A Dataset of O
 # Citing this project
 
 If you use this project or the code used to generate it, please cite
-[Reading the unreadable: Creating a dataset of 19th century English newspapers using image-to-text language models](https://arxiv.org/abs/2502.14901)
+[Reading the unreadable: Creating a dataset of 19th century English newspapers using image-to-text language models](https://doi.org/10.1093/llc/fqaf151)
